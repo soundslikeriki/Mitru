@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0F172A" />
+    <title>Mitru</title>
+  </head>
+  <body>
+    <div id="root">
+      <style>
+        body {
+          margin: 0;
+          background: #0f172a;
+          color: #f8fafc;
+          font-family: Inter, "Noto Sans JP", system-ui, sans-serif;
+        }
+
+        .mitru-splash {
+          display: grid;
+          min-height: 100vh;
+          place-items: center;
+          background:
+            radial-gradient(circle at 70% 20%, rgba(16, 185, 129, 0.18), transparent 28%),
+            linear-gradient(135deg, #0f172a 0%, #111827 54%, #0b1220 100%);
+        }
+
+        .mitru-splash__mark {
+          width: 96px;
+          height: 96px;
+          border-radius: 24px;
+          background: #ffffff;
+          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+          object-fit: cover;
+        }
+
+        .mitru-splash__name {
+          margin-top: 18px;
+          text-align: center;
+          font-size: 18px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+        }
+      </style>
+      <div class="mitru-splash" aria-label="Mitru 起動中">
+        <div>
+          <img class="mitru-splash__mark" src="/mitru-splash-icon.png" alt="Mitru" />
+          <div class="mitru-splash__name">Mitru</div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
