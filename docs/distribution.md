@@ -5,7 +5,7 @@ MitruはTauri 2で、macOSとWindows向けに配布できる設定にしてい�
 ## 共通設定
 
 - 製品名: `Mitru`
-- バージョン: `0.9.6-beta`
+- バージョン: `0.9.7-beta`
 - Bundle ID: `com.mitru.desktop`
 - 保存先: `src-tauri/target/release/bundle/`
 - アイコン: `src-tauri/icons/mitru-official-mark.png` から `npm run tauri:icon` で生成した公式ロゴアイコンを使用
@@ -27,7 +27,7 @@ MITRU_BUILD_APP_ONLY=1 npm run tauri:build:mac
 成果物:
 
 - `src-tauri/target/release/bundle/macos/Mitru.app`
-- `src-tauri/target/release/bundle/dmg/Mitru_0.9.6-beta_*.dmg`
+- `src-tauri/target/release/bundle/dmg/Mitru_0.9.7-beta_*.dmg`
 
 注意:
 
@@ -43,8 +43,10 @@ MITRU_BUILD_APP_ONLY=1 npm run tauri:build:mac
 2. `Mitru.app` を右クリックする。
 3. 「開く」を選択する。
 4. 確認ダイアログでもう一度「開く」を選択する。
+5. それでも起動できない場合は、macOSの「システム設定 > プライバシーとセキュリティ」を開き、Mitruの起動許可が表示されていることを確認して「このまま開く」を選択する。
 
 通常のダブルクリックではなく、右クリックからの「開く」を使う点を配布案内にも明記する。
+配布元がMitruの限定ベータ配布ページであることを確認できないファイルには、Gatekeeper回避手順を案内しない。
 
 ## Windows
 
@@ -73,9 +75,11 @@ npm run tauri:build:windows
 限定ベータ版では、コード署名の状態によってWindows SmartScreenの警告が表示される場合がある。配布元を確認したうえで、以下の手順を案内する。
 
 1. SmartScreen警告画面で「詳細情報」をクリックする。
-2. 表示された「実行」ボタンをクリックする。
+2. アプリ名がMitruであること、入手元がMitruの正式な限定ベータ配布ページであることを確認する。
+3. 表示された「実行」ボタンをクリックする。
 
 配布案内では、必ずMitruの正式な限定ベータ配布ページから入手したファイルだけを実行するよう明記する。
+不明な配布元、再配布されたファイル、ハッシュやファイル名が案内と異なるファイルでは、SmartScreen回避手順を案内しない。
 
 ### Windowsビルド手順
 
@@ -124,6 +128,27 @@ Mitruはローカルファーストのため、案件・顧客・書類・マス
 - 不具合報告のためにデータをリセットする前
 
 バックアップはアプリ内の「アプリ設定 > データ出力」から作成する。
+
+## アプリ内アップデート
+
+Mitru v0.9.6以降はTauri Updaterを組み込み、GitHub Releasesの `latest.json` を更新ソースとして参照する。
+
+Mitru v0.9.7-betaでは、任意でSupabaseを使ったBring Your Own Supabase方式のクラウド同期を利用できる。クラウド同期はオフライン優先の補助機能であり、実案件同期前には必ずバックアップ作成を案内する。
+
+現在の更新チェックURL:
+
+```text
+https://github.com/rikiharada/Mitru/releases/latest/download/latest.json
+```
+
+リリース作成時に必要なもの:
+
+- GitHub ReleasesにmacOS用 `Mitru.app.tar.gz` と `.sig` をアップロードする
+- Windows配布時はNSIS/MSIの更新用アーティファクトと `.sig` をアップロードする
+- `latest.json` に対象プラットフォームごとの `url` と `signature` を記載する
+- ビルド時は `src-tauri/updater/mitru-updater.key` を使って更新アーティファクトに署名する
+
+秘密鍵 `src-tauri/updater/mitru-updater.key` は絶対に公開しない。紛失すると既存ユーザーへ安全な自動更新を配布できなくなる。
 
 ## 全ターゲット指定
 

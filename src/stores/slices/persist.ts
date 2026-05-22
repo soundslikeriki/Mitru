@@ -1,14 +1,18 @@
 import type { StateStorage } from "zustand/middleware";
 import { backupSliceVersion } from "./backup-slice";
 import { calculationSliceVersion } from "./calculation-slice";
+import { cloudSyncSliceVersion } from "./cloud-sync-slice";
 import { customerSliceVersion } from "./customer-slice";
 import { deliverySliceVersion, invoiceSliceVersion, orderSliceVersion, quoteSliceVersion } from "./document-slice";
 import { masterSliceVersion } from "./master-slice";
 import { projectSliceVersion } from "./project-slice";
 import { settingsSliceVersion } from "./settings-slice";
 import type { ProjectStore } from "./types";
+import { cloudSyncFeatureEnabled } from "@/lib/feature-flags";
+import { normalizeProjectTaxRateType, resolveProjectTaxRate } from "@/lib/tax";
 import {
   defaultCostSettings,
+  defaultCloudSyncSettings,
   defaultInteriorWorkItemMasterInputs,
   defaultDocumentNumberSettings,
   defaultTaxSettings,
@@ -17,11 +21,21 @@ import {
   initialPdfTemplateSettings,
   samplePortfolioActualCosts,
   samplePortfolioCustomers,
+  samplePortfolioEstimateDocuments,
+  samplePortfolioInvoiceDocuments,
   samplePortfolioProjectItems,
   samplePortfolioProjects,
   systemMaterialCategories,
 } from "../defaults";
 import type {
+  BillingCloseRecord,
+  BankAccount,
+  CloudSyncConflict,
+  CloudSyncUser,
+  CalculationTemplate,
+  CompanyInfo,
+  Customer,
+  DeliveryDocument,
   DocumentNumberConfig,
   EstimateDocument,
   EstimateLineSnapshot,
@@ -29,17 +43,26 @@ import type {
   InvoiceDocument,
   InvoiceLineSnapshot,
   MaterialMaster,
+  OrderDocument,
   PaymentRecord,
   Project,
   ProjectCostSettings,
   ProjectItem,
+  ProjectInvoiceSettings,
   ProjectStatus,
+  PurchaseRecord,
+  SyncMetadata,
   TaxSettings,
   WorkItemMaster,
 } from "./types";
 
-export const projectStoreVersion = 26;
+export const projectStoreVersion = 56;
 const projectStoreKey = "mitru-local-store";
+const samplePortfolioItemById = new Map(samplePortfolioProjectItems.map((item) => [item.id, item]));
+const samplePortfolioCustomerIds = new Set(samplePortfolioCustomers.map((customer) => customer.id));
+const samplePortfolioProjectIds = new Set(samplePortfolioProjects.map((project) => project.id));
+const samplePortfolioEstimateDocumentIds = new Set(samplePortfolioEstimateDocuments.map((document) => document.id));
+const samplePortfolioInvoiceDocumentIds = new Set(samplePortfolioInvoiceDocuments.map((document) => document.id));
 
 function notifyStorageWarning(description: string) {
   if (typeof window === "undefined") return;
@@ -64,6 +87,7 @@ export const slicePersistVersions = {
   order: orderSliceVersion,
   master: masterSliceVersion,
   settings: settingsSliceVersion,
+  cloudSync: cloudSyncSliceVersion,
   backup: backupSliceVersion,
 } as const;
 
@@ -71,6 +95,7 @@ const persistedKeys = [
   "customers",
   "projects",
   "projectItems",
+  "calculationTemplates",
   "workItemMasters",
   "materialMasters",
   "costSettingsByProjectId",
@@ -86,12 +111,77 @@ const persistedKeys = [
   "companyInfo",
   "pdfTemplateSettings",
   "taxSettings",
+  "cloudSyncSettings",
   "documentNumberSettings",
   "lastBackupAt",
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function omitRecordKeys<T>(record: Record<string, T> | undefined, keys: Set<string>) {
+  if (!record) return {};
+  return Object.fromEntries(Object.entries(record).filter(([key]) => !keys.has(key)));
+}
+
+function refreshSamplePortfolioData(migrated: Partial<ProjectStore>): Partial<ProjectStore> {
+  return {
+    ...migrated,
+    customers: [
+      ...(Array.isArray(migrated.customers)
+        ? migrated.customers.filter((customer) => !samplePortfolioCustomerIds.has(customer.id))
+        : []),
+      ...samplePortfolioCustomers,
+    ],
+    projects: [
+      ...(Array.isArray(migrated.projects)
+        ? migrated.projects.filter((project) => !samplePortfolioProjectIds.has(project.id))
+        : []),
+      ...samplePortfolioProjects,
+    ],
+    projectItems: [
+      ...(Array.isArray(migrated.projectItems)
+        ? migrated.projectItems.filter(
+            (item) => !samplePortfolioProjectIds.has(item.projectId) && !item.id.startsWith("sample-"),
+          )
+        : []),
+      ...samplePortfolioProjectItems,
+    ],
+    costSettingsByProjectId: omitRecordKeys(migrated.costSettingsByProjectId, samplePortfolioProjectIds),
+    quoteSettingsByProjectId: omitRecordKeys(migrated.quoteSettingsByProjectId, samplePortfolioProjectIds),
+    invoiceSettingsByProjectId: omitRecordKeys(migrated.invoiceSettingsByProjectId, samplePortfolioProjectIds),
+    invoiceItemsByItemId: Object.fromEntries(
+      Object.entries(migrated.invoiceItemsByItemId ?? {}).filter(([itemId]) => !itemId.startsWith("sample-")),
+    ),
+    sealSettingsByProjectId: omitRecordKeys(migrated.sealSettingsByProjectId, samplePortfolioProjectIds),
+    estimateDocuments: [
+      ...(Array.isArray(migrated.estimateDocuments)
+        ? migrated.estimateDocuments.filter(
+            (document) =>
+              !samplePortfolioProjectIds.has(document.projectId) &&
+              !samplePortfolioEstimateDocumentIds.has(document.id),
+          )
+        : []),
+      ...samplePortfolioEstimateDocuments,
+    ],
+    invoiceDocuments: [
+      ...(Array.isArray(migrated.invoiceDocuments)
+        ? migrated.invoiceDocuments.filter(
+            (document) =>
+              !samplePortfolioProjectIds.has(document.projectId) &&
+              !samplePortfolioInvoiceDocumentIds.has(document.id),
+          )
+        : []),
+      ...samplePortfolioInvoiceDocuments,
+    ],
+    deliveryDocuments: Array.isArray(migrated.deliveryDocuments)
+      ? migrated.deliveryDocuments.filter((document) => !samplePortfolioProjectIds.has(document.projectId))
+      : [],
+    orderDocuments: Array.isArray(migrated.orderDocuments)
+      ? migrated.orderDocuments.filter((document) => !samplePortfolioProjectIds.has(document.projectId))
+      : [],
+  };
 }
 
 function createMigratedMasterId(prefix: string, index: number) {
@@ -127,6 +217,193 @@ function normalizeMaterialCategory(category: unknown): MaterialMaster["category"
     return category as MaterialMaster["category"];
   }
   return "資材・建材";
+}
+
+function createInitialSyncMetadata(): SyncMetadata {
+  return {
+    lastSyncedAt: null,
+    serverId: null,
+    version: 1,
+    syncedBy: null,
+  };
+}
+
+function normalizeSyncMetadata(value: unknown): SyncMetadata {
+  if (!isRecord(value)) return createInitialSyncMetadata();
+
+  const version = Number(value.version);
+  return {
+    lastSyncedAt: typeof value.lastSyncedAt === "string" && value.lastSyncedAt ? value.lastSyncedAt : null,
+    serverId: typeof value.serverId === "string" && value.serverId ? value.serverId : null,
+    version: Number.isFinite(version) && version > 0 ? Math.floor(version) : 1,
+    syncedBy: typeof value.syncedBy === "string" && value.syncedBy ? value.syncedBy : null,
+  };
+}
+
+function isCloudSyncAuthState(value: unknown): value is ProjectStore["cloudSyncSettings"]["authState"] {
+  return value === "idle" || value === "authenticating" || value === "authenticated" || value === "error";
+}
+
+function isCloudSyncStatus(value: unknown): value is ProjectStore["cloudSyncSettings"]["syncStatus"] {
+  return value === "idle" || value === "syncing" || value === "success" || value === "error";
+}
+
+function normalizeCloudSyncUser(value: unknown): CloudSyncUser | null {
+  if (!isRecord(value)) return null;
+  const id = typeof value.id === "string" ? value.id : "";
+  const email = typeof value.email === "string" ? value.email : "";
+  const name = typeof value.name === "string" ? value.name : "";
+  if (!id || !email) return null;
+  return { id, email, name };
+}
+
+function normalizeCloudSyncEntityResult(
+  value: unknown,
+  fallback: ProjectStore["cloudSyncSettings"]["lastSyncResults"]["projects"],
+) {
+  if (!isRecord(value)) return fallback;
+  const status = value.status === "success" || value.status === "error" || value.status === "skipped" || value.status === "idle"
+    ? value.status
+    : fallback.status;
+  return {
+    status,
+    pulled: Number(value.pulled ?? fallback.pulled) || 0,
+    pushed: Number(value.pushed ?? fallback.pushed) || 0,
+    skipped: Number(value.skipped ?? fallback.skipped) || 0,
+    message: String(value.message ?? fallback.message),
+    syncedAt: typeof value.syncedAt === "string" ? value.syncedAt : fallback.syncedAt,
+    syncCursorId: typeof value.syncCursorId === "string" ? value.syncCursorId : fallback.syncCursorId ?? null,
+  };
+}
+
+function normalizeCloudSyncTimestamp(value: unknown) {
+  return typeof value === "string" && value ? value : "";
+}
+
+function normalizeEntityLastSyncedAt(
+  settings: Record<string, unknown>,
+  field: keyof Pick<
+    ProjectStore["cloudSyncSettings"],
+    | "lastProjectsSyncedAt"
+    | "lastCustomersSyncedAt"
+    | "lastEstimatesSyncedAt"
+    | "lastInvoicesSyncedAt"
+    | "lastPaymentsSyncedAt"
+  >,
+  entity: keyof ProjectStore["cloudSyncSettings"]["lastSyncResults"],
+) {
+  const explicitTimestamp = normalizeCloudSyncTimestamp(settings[field]);
+  if (explicitTimestamp) return explicitTimestamp;
+
+  const lastSyncResults = isRecord(settings.lastSyncResults) ? settings.lastSyncResults : {};
+  const entityResult = isRecord(lastSyncResults[entity]) ? lastSyncResults[entity] : {};
+  if (entityResult.status !== "success") return "";
+  return normalizeCloudSyncTimestamp(entityResult.syncedAt);
+}
+
+function normalizeEntitySyncCursorId(
+  settings: Record<string, unknown>,
+  field: keyof Pick<
+    ProjectStore["cloudSyncSettings"],
+    | "lastProjectsSyncCursorId"
+    | "lastCustomersSyncCursorId"
+    | "lastEstimatesSyncCursorId"
+    | "lastInvoicesSyncCursorId"
+    | "lastPaymentsSyncCursorId"
+  >,
+  entity: keyof ProjectStore["cloudSyncSettings"]["lastSyncResults"],
+) {
+  const explicitCursorId = normalizeCloudSyncTimestamp(settings[field]);
+  if (explicitCursorId) return explicitCursorId;
+
+  const lastSyncResults = isRecord(settings.lastSyncResults) ? settings.lastSyncResults : {};
+  const entityResult = isRecord(lastSyncResults[entity]) ? lastSyncResults[entity] : {};
+  if (entityResult.status !== "success") return "";
+  return normalizeCloudSyncTimestamp(entityResult.syncCursorId);
+}
+
+function normalizeCloudSyncProgress(value: unknown): ProjectStore["cloudSyncSettings"]["syncProgress"] {
+  if (!isRecord(value)) return defaultCloudSyncSettings.syncProgress;
+  const totalSteps = Math.max(1, Number(value.totalSteps || defaultCloudSyncSettings.syncProgress.totalSteps));
+  const currentStep = Math.min(Math.max(0, Number(value.currentStep || 0)), totalSteps);
+  return {
+    isSyncing: Boolean(value.isSyncing),
+    currentStep,
+    totalSteps,
+    label: typeof value.label === "string" && value.label ? value.label : defaultCloudSyncSettings.syncProgress.label,
+    startedAt: typeof value.startedAt === "string" && value.startedAt ? value.startedAt : null,
+  };
+}
+
+function normalizeCloudSyncHistory(value: unknown): ProjectStore["cloudSyncSettings"]["syncHistory"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isRecord)
+    .map((entry) => {
+      const status: ProjectStore["cloudSyncSettings"]["syncHistory"][number]["status"] =
+        entry.status === "success" || entry.status === "partial" || entry.status === "error"
+          ? entry.status
+          : "error";
+      return {
+        id: typeof entry.id === "string" && entry.id ? entry.id : `sync-history-${Date.now()}`,
+        ranAt:
+          typeof entry.ranAt === "string" && entry.ranAt
+            ? entry.ranAt
+            : typeof entry.syncedAt === "string" && entry.syncedAt
+              ? entry.syncedAt
+              : new Date().toISOString(),
+        status,
+        succeeded: Math.max(0, Number(entry.succeeded || 0)),
+        failed: Math.max(0, Number(entry.failed || 0)),
+        message: String(entry.message || "同期履歴"),
+      };
+    })
+    .slice(0, 3);
+}
+
+function isCloudSyncEntityType(value: unknown): value is CloudSyncConflict["entityType"] {
+  return value === "projects" || value === "customers" || value === "estimates" || value === "invoices" || value === "payments";
+}
+
+function normalizeCloudSyncConflicts(value: unknown): CloudSyncConflict[] {
+  if (!Array.isArray(value)) return [];
+  const conflicts: CloudSyncConflict[] = [];
+  for (const conflict of value.filter(isRecord)) {
+    const entityType = isCloudSyncEntityType(conflict.entityType) ? conflict.entityType : null;
+    const entityId = typeof conflict.entityId === "string" ? conflict.entityId : "";
+    if (!entityType || !entityId) continue;
+    conflicts.push({
+      id: typeof conflict.id === "string" && conflict.id ? conflict.id : `${entityType}:${entityId}`,
+      entityType,
+      entityLabel: typeof conflict.entityLabel === "string" && conflict.entityLabel ? conflict.entityLabel : "同期データ",
+      entityId,
+      title: typeof conflict.title === "string" && conflict.title ? conflict.title : entityId,
+      localUpdatedAt: typeof conflict.localUpdatedAt === "string" ? conflict.localUpdatedAt : "",
+      cloudUpdatedAt: typeof conflict.cloudUpdatedAt === "string" ? conflict.cloudUpdatedAt : "",
+      detectedAt: typeof conflict.detectedAt === "string" && conflict.detectedAt ? conflict.detectedAt : new Date().toISOString(),
+      localRecord: conflict.localRecord ?? null,
+      cloudRecord: conflict.cloudRecord ?? null,
+    });
+  }
+  return conflicts.slice(0, 20);
+}
+
+function withSyncMetadata<TRecord extends { syncMetadata?: SyncMetadata }>(record: TRecord): TRecord {
+  return {
+    ...record,
+    syncMetadata: normalizeSyncMetadata(record.syncMetadata),
+  };
+}
+
+function withDeletedAt<TRecord extends { deletedAt?: string | null }>(record: TRecord): TRecord {
+  return {
+    ...record,
+    deletedAt: typeof record.deletedAt === "string" && record.deletedAt ? record.deletedAt : null,
+  };
+}
+
+function withSyncTombstone<TRecord extends { syncMetadata?: SyncMetadata; deletedAt?: string | null }>(record: TRecord): TRecord {
+  return withSyncMetadata(withDeletedAt(record));
 }
 
 const defaultWorkMiddleCategoryByName = new Map(
@@ -311,6 +588,18 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
       [key]: state[key],
     };
   }, {});
+  migrated.calculationTemplates = Array.isArray(migrated.calculationTemplates)
+    ? (migrated.calculationTemplates as CalculationTemplate[]).map((template) => ({
+        ...template,
+        customerId: template.customerId ?? null,
+        items: Array.isArray(template.items)
+          ? template.items.map((item) => ({
+              ...item,
+              middleCategory: item.middleCategory || item.majorCategory,
+            }))
+          : [],
+      }))
+    : [];
   if (isRecord(migrated.taxSettings)) {
     migrated.taxSettings = {
       ...defaultTaxSettings,
@@ -318,8 +607,120 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
       defaultWelfareRate: Number(migrated.taxSettings.defaultWelfareRate ?? defaultWelfareRate),
     };
   }
+  const forceCloudSyncOff =
+    !cloudSyncFeatureEnabled || version === undefined || version < 51;
+  migrated.cloudSyncSettings = isRecord(migrated.cloudSyncSettings)
+    ? {
+        ...defaultCloudSyncSettings,
+        ...migrated.cloudSyncSettings,
+        isEnabled: forceCloudSyncOff ? false : Boolean(migrated.cloudSyncSettings.isEnabled),
+        isTestMode: forceCloudSyncOff ? false : Boolean(migrated.cloudSyncSettings.isTestMode),
+        isConnected: forceCloudSyncOff ? false : Boolean(migrated.cloudSyncSettings.isConnected),
+        supabaseUrl: String(migrated.cloudSyncSettings.supabaseUrl ?? ""),
+        supabaseAnonKey: String(migrated.cloudSyncSettings.supabaseAnonKey ?? ""),
+        lastSyncAt: forceCloudSyncOff ? "" : String(migrated.cloudSyncSettings.lastSyncAt ?? ""),
+        lastProjectsSyncedAt: forceCloudSyncOff
+          ? ""
+          : normalizeEntityLastSyncedAt(migrated.cloudSyncSettings, "lastProjectsSyncedAt", "projects"),
+        lastCustomersSyncedAt: forceCloudSyncOff
+          ? ""
+          : normalizeEntityLastSyncedAt(migrated.cloudSyncSettings, "lastCustomersSyncedAt", "customers"),
+        lastEstimatesSyncedAt: forceCloudSyncOff
+          ? ""
+          : normalizeEntityLastSyncedAt(migrated.cloudSyncSettings, "lastEstimatesSyncedAt", "estimates"),
+        lastInvoicesSyncedAt: forceCloudSyncOff
+          ? ""
+          : normalizeEntityLastSyncedAt(migrated.cloudSyncSettings, "lastInvoicesSyncedAt", "invoices"),
+        lastPaymentsSyncedAt: forceCloudSyncOff
+          ? ""
+          : normalizeEntityLastSyncedAt(migrated.cloudSyncSettings, "lastPaymentsSyncedAt", "payments"),
+        lastProjectsSyncCursorId: forceCloudSyncOff
+          ? ""
+          : normalizeEntitySyncCursorId(migrated.cloudSyncSettings, "lastProjectsSyncCursorId", "projects"),
+        lastCustomersSyncCursorId: forceCloudSyncOff
+          ? ""
+          : normalizeEntitySyncCursorId(migrated.cloudSyncSettings, "lastCustomersSyncCursorId", "customers"),
+        lastEstimatesSyncCursorId: forceCloudSyncOff
+          ? ""
+          : normalizeEntitySyncCursorId(migrated.cloudSyncSettings, "lastEstimatesSyncCursorId", "estimates"),
+        lastInvoicesSyncCursorId: forceCloudSyncOff
+          ? ""
+          : normalizeEntitySyncCursorId(migrated.cloudSyncSettings, "lastInvoicesSyncCursorId", "invoices"),
+        lastPaymentsSyncCursorId: forceCloudSyncOff
+          ? ""
+          : normalizeEntitySyncCursorId(migrated.cloudSyncSettings, "lastPaymentsSyncCursorId", "payments"),
+        syncStatus: forceCloudSyncOff
+          ? "idle"
+          : isCloudSyncStatus(migrated.cloudSyncSettings.syncStatus)
+          ? migrated.cloudSyncSettings.syncStatus
+          : "idle",
+        syncProgress: forceCloudSyncOff
+          ? defaultCloudSyncSettings.syncProgress
+          : normalizeCloudSyncProgress(migrated.cloudSyncSettings.syncProgress),
+        lastSyncResults: forceCloudSyncOff
+          ? defaultCloudSyncSettings.lastSyncResults
+          : {
+              projects: normalizeCloudSyncEntityResult(
+                isRecord(migrated.cloudSyncSettings.lastSyncResults)
+                  ? migrated.cloudSyncSettings.lastSyncResults.projects
+                  : undefined,
+                defaultCloudSyncSettings.lastSyncResults.projects,
+              ),
+              customers: normalizeCloudSyncEntityResult(
+                isRecord(migrated.cloudSyncSettings.lastSyncResults)
+                  ? migrated.cloudSyncSettings.lastSyncResults.customers
+                  : undefined,
+                defaultCloudSyncSettings.lastSyncResults.customers,
+              ),
+              estimates: normalizeCloudSyncEntityResult(
+                isRecord(migrated.cloudSyncSettings.lastSyncResults)
+                  ? migrated.cloudSyncSettings.lastSyncResults.estimates
+                  : undefined,
+                defaultCloudSyncSettings.lastSyncResults.estimates,
+              ),
+              invoices: normalizeCloudSyncEntityResult(
+                isRecord(migrated.cloudSyncSettings.lastSyncResults)
+                  ? migrated.cloudSyncSettings.lastSyncResults.invoices
+                  : undefined,
+                defaultCloudSyncSettings.lastSyncResults.invoices,
+              ),
+              payments: normalizeCloudSyncEntityResult(
+                isRecord(migrated.cloudSyncSettings.lastSyncResults)
+                  ? migrated.cloudSyncSettings.lastSyncResults.payments
+                  : undefined,
+                defaultCloudSyncSettings.lastSyncResults.payments,
+              ),
+            },
+        syncHistory: forceCloudSyncOff ? [] : normalizeCloudSyncHistory(migrated.cloudSyncSettings.syncHistory),
+        pendingConflicts: forceCloudSyncOff ? [] : normalizeCloudSyncConflicts(migrated.cloudSyncSettings.pendingConflicts),
+        authState: forceCloudSyncOff
+          ? "idle"
+          : isCloudSyncAuthState(migrated.cloudSyncSettings.authState)
+          ? migrated.cloudSyncSettings.authState
+          : "idle",
+        user: forceCloudSyncOff ? null : normalizeCloudSyncUser(migrated.cloudSyncSettings.user),
+      }
+    : defaultCloudSyncSettings;
+  migrated.companyInfo = normalizeCompanyInfo(migrated.companyInfo);
+  if (isRecord(migrated.invoiceSettingsByProjectId)) {
+    migrated.invoiceSettingsByProjectId = Object.fromEntries(
+      Object.entries(migrated.invoiceSettingsByProjectId as Record<string, ProjectInvoiceSettings>).map(([projectId, settings]) => [
+        projectId,
+        {
+          ...settings,
+          bankAccountId: settings.bankAccountId ?? null,
+        },
+      ]),
+    );
+  } else {
+    migrated.invoiceSettingsByProjectId = {};
+  }
+  if (Array.isArray(migrated.customers)) {
+    migrated.customers = (migrated.customers as Customer[]).map((customer) => withSyncTombstone(customer));
+  }
   if (Array.isArray(migrated.projectItems)) {
     migrated.projectItems = migrated.projectItems.map((item) => {
+      const samplePortfolioItem = samplePortfolioItemById.get(item.id);
       const quantity = Number(item.quantity || 0);
       const legacyLineUnitPrice =
         quantity > 0
@@ -330,26 +731,51 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
             quantity
           : item.materialUnitCost;
 
-      return {
+      const inferredItemType =
+        item.itemType ??
+        (Number(item.materialUnitCost || item.estimatedUnitCost || 0) > 0 &&
+        Number(item.laborProductivity || item.estimatedLaborProductivity || item.laborUnitCost || item.estimatedLaborUnitCost || 0) === 0
+          ? "material"
+          : "labor");
+
+      return withSyncMetadata({
         ...item,
         middleCategory: normalizeWorkMiddleCategory(item),
-        itemType:
-          item.itemType ??
-          (Number(item.materialUnitCost || 0) > 0 && Number(item.laborProductivity || 0) === 0
-            ? "material"
-            : "labor"),
+        itemType: samplePortfolioItem?.itemType ?? inferredItemType,
         estimatedLaborProductivity: item.estimatedLaborProductivity ?? item.laborProductivity,
         actualLaborProductivity: item.actualLaborProductivity ?? item.laborProductivity,
         estimatedLaborUnitCost: item.estimatedLaborUnitCost ?? item.laborUnitCost,
         actualLaborUnitCost: item.actualLaborUnitCost ?? item.laborUnitCost,
         welfareRate: item.welfareRate ?? defaultWelfareRate,
+        baseCost: item.baseCost ?? (inferredItemType === "material" ? item.actualUnitCost ?? item.materialUnitCost ?? null : null),
+        markupRate: item.markupRate ?? 1,
         estimatedUnitCost: item.estimatedUnitCost ?? legacyLineUnitPrice,
         actualUnitCost: item.actualUnitCost ?? item.materialUnitCost,
         priceModelVersion: item.priceModelVersion ?? 2,
         ...(version !== undefined && version < 9 && samplePortfolioActualCosts[item.id]
           ? samplePortfolioActualCosts[item.id]
           : {}),
-      };
+        ...(samplePortfolioItem
+          ? {
+              itemType: samplePortfolioItem.itemType,
+              materialUnitCost: samplePortfolioItem.materialUnitCost,
+              baseCost: samplePortfolioItem.baseCost,
+              markupRate: samplePortfolioItem.markupRate,
+              estimatedUnitCost: samplePortfolioItem.estimatedUnitCost,
+              actualUnitCost: samplePortfolioItem.actualUnitCost,
+              laborProductivity: samplePortfolioItem.laborProductivity,
+              estimatedLaborProductivity: samplePortfolioItem.estimatedLaborProductivity,
+              actualLaborProductivity: samplePortfolioItem.actualLaborProductivity,
+              laborUnitCost: samplePortfolioItem.laborUnitCost,
+              estimatedLaborUnitCost: samplePortfolioItem.estimatedLaborUnitCost,
+              actualLaborUnitCost: samplePortfolioItem.actualLaborUnitCost,
+              actualMaterialCost: samplePortfolioItem.actualMaterialCost,
+              actualLaborCost: samplePortfolioItem.actualLaborCost,
+              actualOutsourcingCost: samplePortfolioItem.actualOutsourcingCost,
+              priceModelVersion: samplePortfolioItem.priceModelVersion,
+            }
+          : {}),
+      });
     });
   }
   if (Array.isArray(migrated.workItemMasters)) {
@@ -360,37 +786,40 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
           middleCategory: normalizeWorkMiddleCategory(master),
         })),
       ),
-    );
+    ).map((master) => withSyncMetadata(master));
   }
   if (Array.isArray(migrated.materialMasters)) {
     migrated.materialMasters = normalizeUniqueMasterIds(migrated.materialMasters as MaterialMaster[], "material").map((material) => ({
       ...material,
       category: normalizeMaterialCategory(material.category),
-    }));
+    })).map((material) => withSyncMetadata(material));
   }
   const projectItems = Array.isArray(migrated.projectItems) ? (migrated.projectItems as ProjectItem[]) : [];
+  const projectsForTax = Array.isArray(migrated.projects) ? (migrated.projects as Project[]) : [];
+  const projectForTaxById = new Map(projectsForTax.map((project) => [project.id, project]));
   const costSettingsByProjectId =
     isRecord(migrated.costSettingsByProjectId) ? (migrated.costSettingsByProjectId as Record<string, ProjectCostSettings>) : {};
   const taxSettings = isRecord(migrated.taxSettings) ? (migrated.taxSettings as TaxSettings) : defaultTaxSettings;
   if (Array.isArray(migrated.estimateDocuments)) {
     migrated.estimateDocuments = (migrated.estimateDocuments as EstimateDocument[]).map((document) => {
       if (document.lineSnapshot?.length && document.totalsSnapshot) {
-        return {
+        return withSyncTombstone({
           ...document,
           lineSnapshot: normalizeEstimateLineSnapshots(document.lineSnapshot),
           totalsSnapshot: normalizeEstimateTotalsSnapshot(document.totalsSnapshot),
-        };
+        });
       }
       const items = projectItems.filter((item) => item.projectId === document.projectId);
       const costSettings = costSettingsByProjectId[document.projectId] ?? defaultCostSettings;
+      const projectTaxRate = resolveProjectTaxRate(projectForTaxById.get(document.projectId)?.taxRateType, taxSettings.standardTaxRate);
       const lines = createEstimateLineSnapshots(items);
-      const totals = calculateEstimateTotalsSnapshot(items, costSettings, taxSettings);
-      return {
+      const totals = calculateEstimateTotalsSnapshot(items, costSettings, taxSettings, projectTaxRate);
+      return withSyncTombstone({
         ...document,
         lineSnapshot: lines,
         totalsSnapshot: totals,
         snapshotCreatedAt: document.updatedAt || document.createdAt || new Date().toISOString(),
-      };
+      });
     });
   }
   if (Array.isArray(migrated.invoiceDocuments)) {
@@ -404,7 +833,7 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
         : [];
       const fallbackPaidAmount =
         document.paidAmount ??
-        paymentRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0) ??
+        paymentRecords.reduce((sum, record) => (record.deletedAt ? sum : sum + Number(record.amount || 0)), 0) ??
         0;
       const invoiceTotal = document.totalsSnapshot?.afterTax ?? document.currentAmount;
       const normalizedPaymentRecords =
@@ -418,28 +847,39 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
                 paymentMethod: "その他" as const,
                 note: "移行データ",
                 createdAt: document.updatedAt || new Date().toISOString(),
+                updatedAt: document.updatedAt || new Date().toISOString(),
               },
             ]
           : paymentRecords;
+      const syncedPaymentRecords = normalizedPaymentRecords.map((record) =>
+        withSyncTombstone({
+          ...record,
+          updatedAt: record.updatedAt || record.createdAt || document.updatedAt || new Date().toISOString(),
+        }),
+      );
       const paidAmount =
-        normalizedPaymentRecords.length > 0
-          ? normalizedPaymentRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0)
+        syncedPaymentRecords.length > 0
+          ? syncedPaymentRecords.reduce((sum, record) => (record.deletedAt ? sum : sum + Number(record.amount || 0)), 0)
           : fallbackPaidAmount;
+      const bankAccountId = normalizeInvoiceBankAccountId(document.bankAccountId, migrated.companyInfo as CompanyInfo);
       if (document.lineSnapshot?.length && document.totalsSnapshot) {
-        return {
+        return withSyncTombstone({
           ...document,
+          bankAccountId,
           paidAmount,
-          paymentRecords: normalizedPaymentRecords,
+          paymentRecords: syncedPaymentRecords,
           lineSnapshot: normalizeInvoiceLineSnapshots(document.lineSnapshot),
-        };
+        });
       }
       const items = projectItems.filter((item) => item.projectId === document.projectId);
       const lines = createInvoiceLineSnapshots(items, invoiceItemsByItemId);
-      const tax = roundCurrencySnapshot(document.currentAmount * taxSettings.standardTaxRate, taxSettings.taxRoundingMode);
-      return {
+      const projectTaxRate = resolveProjectTaxRate(projectForTaxById.get(document.projectId)?.taxRateType, taxSettings.standardTaxRate);
+      const tax = roundCurrencySnapshot(document.currentAmount * projectTaxRate, taxSettings.taxRoundingMode);
+      return withSyncTombstone({
         ...document,
+        bankAccountId,
         paidAmount,
-        paymentRecords: normalizedPaymentRecords,
+        paymentRecords: syncedPaymentRecords,
         lineSnapshot: lines,
         totalsSnapshot: {
           previousBeforeTax: Math.max(0, document.cumulativeAmount - document.currentAmount),
@@ -449,20 +889,34 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
           afterTax: roundCurrencySnapshot(document.currentAmount + tax, taxSettings.totalRoundingMode),
         },
         snapshotCreatedAt: document.updatedAt || document.createdAt || new Date().toISOString(),
-      };
+      });
     });
   }
   if (Array.isArray(migrated.projects)) {
-    migrated.projects = (migrated.projects as Project[]).map((project) => ({
-      ...project,
-      status: normalizeProjectStatus(project.status),
-      nextActionDate: project.nextActionDate ?? "",
-      processMemo: project.processMemo ?? "",
-      ownerMemo: project.ownerMemo ?? "",
-    }));
+    migrated.projects = normalizeProjectNumbers(
+      (migrated.projects as Array<Project & { projectNumber?: string }>).map((project) => ({
+        ...project,
+        ownerId: normalizeProjectOwnerId(project),
+        assignedTo: normalizeProjectAssignee(project.assignedTo),
+        status: normalizeProjectStatus(project.status),
+        taxRateType: normalizeProjectTaxRateType(project.taxRateType),
+        nextActionDate: project.nextActionDate ?? "",
+        processMemo: project.processMemo ?? "",
+        ownerMemo: project.ownerMemo ?? "",
+      })),
+    ).map((project) => withSyncTombstone(project));
   }
   if (!Array.isArray(migrated.billingCloseRecords)) {
     migrated.billingCloseRecords = [];
+  } else {
+    migrated.billingCloseRecords = (migrated.billingCloseRecords as BillingCloseRecord[]).map((record) =>
+      withSyncMetadata(record),
+    );
+  }
+  if (Array.isArray(migrated.deliveryDocuments)) {
+    migrated.deliveryDocuments = (migrated.deliveryDocuments as DeliveryDocument[]).map((document) =>
+      withSyncMetadata(document),
+    );
   }
   if (Array.isArray(migrated.orderDocuments)) {
     migrated.orderDocuments = migrated.orderDocuments.map((document) => {
@@ -470,9 +924,9 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
       const purchasedAmount =
         document.purchasedAmount ??
         purchaseRecords.reduce((sum, record) => sum + Number(record.amount || 0), 0);
-      return {
+      return withSyncMetadata({
         ...document,
-        purchaseRecords,
+        purchaseRecords: (purchaseRecords as PurchaseRecord[]).map((record) => withSyncMetadata(record)),
         purchasedAmount,
         orderLineSnapshot: Array.isArray(document.orderLineSnapshot)
           ? document.orderLineSnapshot.map((line) => ({
@@ -480,7 +934,7 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
               middleCategory: line.middleCategory || line.majorCategory,
             }))
           : [],
-      };
+      });
     });
   }
   if (isRecord(migrated.documentNumberSettings)) {
@@ -499,16 +953,16 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
   if (version !== undefined && version < 7) {
     return {
       ...migrated,
-      customers: [],
-      projects: [],
-      projectItems: [],
+      customers: samplePortfolioCustomers,
+      projects: samplePortfolioProjects,
+      projectItems: samplePortfolioProjectItems,
       costSettingsByProjectId: {},
       quoteSettingsByProjectId: {},
       invoiceSettingsByProjectId: {},
       invoiceItemsByItemId: {},
       sealSettingsByProjectId: {},
-      estimateDocuments: [],
-      invoiceDocuments: [],
+      estimateDocuments: samplePortfolioEstimateDocuments,
+      invoiceDocuments: samplePortfolioInvoiceDocuments,
       deliveryDocuments: [],
       orderDocuments: [],
       companyInfo: initialCompanyInfo,
@@ -534,12 +988,15 @@ export function migrateProjectStore(persistedState: unknown, version?: number): 
         invoiceSettingsByProjectId: {},
         invoiceItemsByItemId: {},
         sealSettingsByProjectId: {},
-        estimateDocuments: [],
-        invoiceDocuments: [],
+        estimateDocuments: samplePortfolioEstimateDocuments,
+        invoiceDocuments: samplePortfolioInvoiceDocuments,
         deliveryDocuments: [],
         orderDocuments: [],
       };
     }
+  }
+  if (version !== undefined && version < 46) {
+    return refreshSamplePortfolioData(migrated);
   }
   return migrated;
 }
@@ -642,6 +1099,7 @@ function calculateEstimateTotalsSnapshot(
   items: ProjectItem[],
   costSettings: ProjectCostSettings,
   taxSettings: TaxSettings,
+  taxRate: number = taxSettings.standardTaxRate,
 ) {
   const base = items.reduce(
     (sum, item) => {
@@ -660,14 +1118,14 @@ function calculateEstimateTotalsSnapshot(
   const commonTemporaryCost = base.directSubtotal * costSettings.commonTemporaryRate;
   const siteManagementCost = base.directSubtotal * costSettings.siteManagementRate;
   const beforeTax = base.directSubtotal + commonTemporaryCost + siteManagementCost;
-  const tax = roundCurrencySnapshot(beforeTax * taxSettings.standardTaxRate, taxSettings.taxRoundingMode);
+  const tax = roundCurrencySnapshot(beforeTax * taxRate, taxSettings.taxRoundingMode);
   const afterTax = roundCurrencySnapshot(beforeTax + tax, taxSettings.totalRoundingMode);
   return { ...base, commonTemporaryCost, siteManagementCost, beforeTax, tax, afterTax };
 }
 
 function calculateLineSnapshot(item: ProjectItem) {
   if (item.itemType === "material") {
-    const unitCost = numberOrZero(item.estimatedUnitCost) || numberOrZero(item.materialUnitCost);
+    const unitCost = resolveMaterialUnitCostSnapshot(item);
     const materialCost = numberOrZero(item.quantity) * unitCost;
     return { laborCost: 0, welfareCost: 0, totalLaborCost: 0, materialCost, expenseCost: 0, subtotal: materialCost };
   }
@@ -683,6 +1141,13 @@ function calculateLineSnapshot(item: ProjectItem) {
   return { laborCost, welfareCost, totalLaborCost, materialCost: 0, expenseCost: 0, subtotal: totalLaborCost };
 }
 
+function resolveMaterialUnitCostSnapshot(item: ProjectItem) {
+  const baseCost = numberOrZero(item.baseCost);
+  const markupRate = numberOrZero(item.markupRate);
+  if (baseCost > 0 && markupRate > 0) return baseCost * markupRate;
+  return numberOrZero(item.estimatedUnitCost) || numberOrZero(item.materialUnitCost);
+}
+
 function numberOrZero(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -694,6 +1159,41 @@ function roundCurrencySnapshot(value: number, mode: TaxSettings["taxRoundingMode
   return Math.round(value);
 }
 
+function normalizeCompanyInfo(value: unknown): CompanyInfo {
+  const companyInfo = isRecord(value) ? ({ ...initialCompanyInfo, ...value } as CompanyInfo) : initialCompanyInfo;
+  return {
+    ...companyInfo,
+    bankAccounts: normalizeBankAccounts(companyInfo.bankAccounts),
+  };
+}
+
+function normalizeBankAccounts(value: unknown): BankAccount[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value
+    .filter(isRecord)
+    .map((account, index) => ({
+      id: typeof account.id === "string" && account.id.trim() ? account.id : `bank-migrated-${index}`,
+      bankName: typeof account.bankName === "string" ? account.bankName : "",
+      branchName: typeof account.branchName === "string" ? account.branchName : "",
+      accountType: account.accountType === "当座" ? "当座" : "普通",
+      accountNumber: typeof account.accountNumber === "string" ? account.accountNumber : "",
+      accountHolder: typeof account.accountHolder === "string" ? account.accountHolder : "",
+      isDefault: Boolean(account.isDefault),
+    }));
+
+  if (normalized.length === 0) return [];
+  const firstDefaultIndex = normalized.findIndex((account) => account.isDefault);
+  return normalized.map((account, index) => ({
+    ...account,
+    isDefault: firstDefaultIndex >= 0 ? index === firstDefaultIndex : index === 0,
+  }));
+}
+
+function normalizeInvoiceBankAccountId(value: unknown, companyInfo: CompanyInfo) {
+  if (typeof value === "string" && companyInfo.bankAccounts.some((account) => account.id === value)) return value;
+  return companyInfo.bankAccounts.find((account) => account.isDefault)?.id ?? companyInfo.bankAccounts[0]?.id ?? null;
+}
+
 function normalizeProjectStatus(status: unknown): ProjectStatus {
   if (status === "請求済") return "請求済み";
   if (status === "進行中") return "施工中";
@@ -702,11 +1202,89 @@ function normalizeProjectStatus(status: unknown): ProjectStatus {
     status === "契約済" ||
     status === "施工中" ||
     status === "完了" ||
-    status === "請求済み"
+    status === "請求済み" ||
+    status === "請求締済" ||
+    status === "失注" ||
+    status === "破棄"
   ) {
     return status;
   }
   return "見積中";
+}
+
+function normalizeProjectOwnerId(project: Project) {
+  const ownerId = typeof project.ownerId === "string" ? project.ownerId.trim() : "";
+  if (ownerId) return ownerId;
+
+  const syncedBy = typeof project.syncMetadata?.syncedBy === "string" ? project.syncMetadata.syncedBy.trim() : "";
+  return syncedBy || "local";
+}
+
+function normalizeProjectAssignee(value: unknown) {
+  if (typeof value !== "string") return null;
+  const assignedTo = value.trim();
+  return assignedTo || null;
+}
+
+function normalizeProjectNumbers(projects: Array<Project & { projectNumber?: string }>) {
+  const usedNumbers = new Set<string>();
+  const nextByYear = new Map<string, number>();
+  const acceptedExistingProjectIds = new Set<string>();
+  const sortedProjects = [...projects].sort((a, b) => {
+    const aTime = getProjectNumberBaseTime(a);
+    const bTime = getProjectNumberBaseTime(b);
+    if (aTime !== bTime) return aTime - bTime;
+    return a.id.localeCompare(b.id);
+  });
+
+  sortedProjects.forEach((project) => {
+    const year = getProjectNumberYear(project);
+    const existing = String(project.projectNumber ?? "").trim();
+    const match = existing.match(/^(\d{4})-(\d{3,})$/);
+    if (match && match[1] === year && !usedNumbers.has(existing)) {
+      usedNumbers.add(existing);
+      acceptedExistingProjectIds.add(project.id);
+      const next = Number(match[2] || 0) + 1;
+      nextByYear.set(year, Math.max(nextByYear.get(year) ?? 1, next));
+    }
+  });
+
+  return projects.map((project) => {
+    const year = getProjectNumberYear(project);
+    const existing = String(project.projectNumber ?? "").trim();
+    const match = existing.match(/^(\d{4})-(\d{3,})$/);
+    if (match && match[1] === year && acceptedExistingProjectIds.has(project.id)) {
+      return {
+        ...project,
+        projectNumber: existing,
+      };
+    }
+
+    let next = nextByYear.get(year) ?? 1;
+    let projectNumber = `${year}-${String(next).padStart(3, "0")}`;
+    while (usedNumbers.has(projectNumber)) {
+      next += 1;
+      projectNumber = `${year}-${String(next).padStart(3, "0")}`;
+    }
+    usedNumbers.add(projectNumber);
+    nextByYear.set(year, next + 1);
+    return {
+      ...project,
+      projectNumber,
+    };
+  });
+}
+
+function getProjectNumberYear(project: Pick<Project, "createdAt" | "startDate" | "updatedAt">) {
+  const source = project.createdAt || project.startDate || project.updatedAt || new Date().toISOString();
+  const year = new Date(source).getFullYear();
+  return Number.isFinite(year) ? String(year) : String(new Date().getFullYear());
+}
+
+function getProjectNumberBaseTime(project: Pick<Project, "createdAt" | "startDate" | "updatedAt">) {
+  const source = project.createdAt || project.startDate || project.updatedAt || "";
+  const time = Date.parse(source);
+  return Number.isFinite(time) ? time : 0;
 }
 
 function normalizeDocumentNumberConfig(

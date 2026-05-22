@@ -18,31 +18,40 @@ import {
   projectProfitTextClass,
   projectProfitToneClass,
 } from "@/features/projects/lib/profit-dashboard";
+import { getProjectUserLabel } from "@/features/projects/lib/project-utils";
 import { projectStatusClass } from "@/features/projects/components/ProjectStatusBar";
 import type { Project, ProjectStatus } from "@/stores/project-store";
 import { useProjectStore } from "@/stores/project-store";
 
-const workflowStatuses: ProjectStatus[] = ["見積中", "契約済", "施工中", "完了", "請求済み"];
+const workflowStatuses: ProjectStatus[] = ["見積中", "契約済", "施工中", "完了", "請求済み", "請求締済", "失注", "破棄"];
 const memoMaxLength = 500;
 
 export function ProjectProgress({ project }: { project: Project }) {
   const updateProject = useProjectStore((state) => state.updateProject);
-  const projects = useProjectStore((state) => state.projects);
+  const allProjects = useProjectStore((state) => state.projects);
   const projectItems = useProjectStore((state) => state.projectItems);
   const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
   const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const deliveryDocuments = useProjectStore((state) => state.deliveryDocuments);
   const orderDocuments = useProjectStore((state) => state.orderDocuments);
+  const cloudUser = useProjectStore((state) => state.cloudSyncSettings.user);
   const [nextActionDate, setNextActionDate] = useState(project.nextActionDate ?? "");
   const [processMemo, setProcessMemo] = useState(project.processMemo ?? "");
   const [ownerMemo, setOwnerMemo] = useState(project.ownerMemo ?? "");
 
+  const projects = useMemo(() => allProjects.filter((item) => !item.deletedAt), [allProjects]);
   const metric = useMemo(
     () => buildProjectProfitMetrics(projects, projectItems).find((item) => item.project.id === project.id),
     [project.id, projectItems, projects],
   );
-  const projectEstimates = estimateDocuments.filter((document) => document.projectId === project.id);
-  const projectInvoices = invoiceDocuments.filter((document) => document.projectId === project.id);
+  const projectEstimates = useMemo(
+    () => estimateDocuments.filter((document) => !document.deletedAt && document.projectId === project.id),
+    [estimateDocuments, project.id],
+  );
+  const projectInvoices = useMemo(
+    () => invoiceDocuments.filter((document) => !document.deletedAt && document.projectId === project.id),
+    [invoiceDocuments, project.id],
+  );
   const paymentTotal = projectInvoices.reduce((sum, document) => sum + getInvoiceTotalAmount(document), 0);
   const paidTotal = projectInvoices.reduce((sum, document) => sum + getInvoicePaidAmount(document), 0);
   const outstandingTotal = projectInvoices.reduce((sum, document) => sum + getInvoiceOutstandingAmount(document), 0);
@@ -73,15 +82,26 @@ export function ProjectProgress({ project }: { project: Project }) {
       <section className="rounded-2xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl shadow-black/20 backdrop-blur-xl">
         <div className="mb-5 flex flex-col justify-between gap-4 xl:flex-row xl:items-start">
           <div>
+            <p className="mb-1 font-mono text-sm font-bold tabular-nums text-emerald-300">
+              案件No. {project.projectNumber || "未採番"}
+            </p>
             <h3 className="text-lg font-semibold text-white">進行管理</h3>
             <p className="mt-1 text-sm text-slate-400">案件の現在位置、次の対応、書類と利益状況をまとめて確認します。</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-300">
+              <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
+                作成者: {getProjectUserLabel(project.ownerId, cloudUser)}
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
+                担当: {getProjectUserLabel(project.assignedTo, cloudUser)}
+              </span>
+            </div>
           </div>
           <div className="inline-flex flex-wrap items-center gap-2">
             <ContextHelp
               title="進行管理の使い方"
               description="案件の状態、次回対応、書類発行状況、利益リスクを一画面で確認するためのタブです。"
               items={[
-                "ステータスは見積中、契約済、施工中、完了、請求済みの順で管理します。",
+                "ステータスは見積中、契約済、施工中、完了、請求済み、請求締済、失注、破棄から選べます。",
                 "次回対応日を入れておくと、ダッシュボードに近い案件として表示されます。",
                 "書類進捗で見積・請求・納品・注文の発行状況をまとめて確認できます。",
                 "粗利率が30%未満で黄色、25%未満で赤色の警告が出ます。",

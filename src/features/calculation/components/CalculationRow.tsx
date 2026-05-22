@@ -1,6 +1,6 @@
 import { type HTMLAttributes, type ReactNode, useState } from "react";
 import { motion } from "framer-motion";
-import { Package, Search, ShoppingCart, Trash2 } from "lucide-react";
+import { Package, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { calculateLine } from "@/features/calculation/lib/calculation";
 import {
@@ -26,7 +26,6 @@ type CalculationRowProps = {
   onTypeChange: (id: string, value: "labor" | "material") => void;
   onOpenMaster: (itemId: string) => void;
   onOpenMaterial: (itemId: string) => void;
-  onCreateOrder: (itemId: string) => void;
   onDelete: (itemId: string) => void;
 };
 
@@ -39,7 +38,6 @@ export function CalculationRow({
   onTypeChange,
   onOpenMaster,
   onOpenMaterial,
-  onCreateOrder,
   onDelete,
 }: CalculationRowProps) {
   const line = calculateLine(item);
@@ -80,11 +78,36 @@ export function CalculationRow({
           onUnitChange={(value) => onTextChange(item.id, "unit", value)}
         />
       </EstimateCell>
+      <EstimateCell className="w-[105px]">
+        {itemType === "material" ? (
+          <EstimateInput
+            value={String(item.baseCost ?? item.materialUnitCost ?? 0)}
+            inputMode="numeric"
+            onChange={(value) => onNumberChange(item.id, "baseCost", value)}
+          />
+        ) : (
+          <span className="text-xs text-slate-500">-</span>
+        )}
+      </EstimateCell>
+      <EstimateCell className="w-[90px]">
+        {itemType === "material" ? (
+          <RateInput
+            value={item.markupRate ?? 1}
+            onChange={(value) => onNumberChange(item.id, "markupRate", String(value))}
+            suffix="x"
+            scale={1}
+            step="0.01"
+            ariaLabel="掛率"
+          />
+        ) : (
+          <span className="text-xs text-slate-500">-</span>
+        )}
+      </EstimateCell>
       <EstimateCell className="w-[110px]">
         {itemType === "labor" ? (
           <EstimateInput value={String(getEstimatedLaborUnitCost(item))} inputMode="numeric" onChange={(value) => onNumberChange(item.id, "estimatedLaborUnitCost", value)} />
         ) : (
-          <EstimateInput value={String(getEstimatedUnitCost(item))} inputMode="numeric" onChange={(value) => onNumberChange(item.id, "estimatedUnitCost", value)} />
+          <EstimateInput value={String(getEstimatedUnitCost(item))} inputMode="numeric" onChange={(value) => onNumberChange(item.id, "estimatedUnitCost", value)} readOnly />
         )}
       </EstimateCell>
       <EstimateCell className="w-[95px]">
@@ -100,18 +123,6 @@ export function CalculationRow({
       <EstimateMoneyCell value={line.subtotal} strong />
       <td className="h-14 w-10 py-3 pl-1 pr-4 text-right align-middle">
         <div className="flex justify-end gap-1">
-          {itemType === "material" && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="発注書を作成"
-              title="発注書を作成"
-              className="size-8 rounded-lg text-slate-500 hover:bg-emerald-500/10 hover:text-emerald-300"
-              onClick={() => onCreateOrder(item.id)}
-            >
-              <ShoppingCart className="size-3.5" />
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="icon"
@@ -131,25 +142,39 @@ export function CalculationRow({
   );
 }
 
-function RateInput({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+function RateInput({
+  value,
+  onChange,
+  suffix = "%",
+  scale = 100,
+  step = "0.1",
+  ariaLabel = "法定福利費率",
+}: {
+  value: number;
+  onChange: (value: number) => void;
+  suffix?: string;
+  scale?: number;
+  step?: string;
+  ariaLabel?: string;
+}) {
   const [draft, setDraft] = useState<string | null>(null);
-  const displayValue = draft ?? formatInputNumber(Math.round(value * 1000) / 10);
+  const displayValue = draft ?? formatInputNumber(scale === 100 ? Math.round(value * 1000) / 10 : value);
 
   return (
     <div className="flex h-9 items-center overflow-hidden rounded-lg border border-white/10 bg-white/[0.05] focus-within:border-emerald-400/60 focus-within:ring-3 focus-within:ring-emerald-400/15">
       <input
         value={displayValue}
         inputMode="decimal"
-        step="0.1"
+        step={step}
         onBlur={() => setDraft(null)}
         onChange={(event) => {
           setDraft(event.target.value);
-          onChange(parseNumericInput(event.target.value) / 100);
+          onChange(parseNumericInput(event.target.value) / scale);
         }}
         className="h-9 min-w-0 flex-1 bg-transparent px-2 text-left text-sm font-medium tabular-nums text-white outline-none"
-        aria-label="法定福利費率"
+        aria-label={ariaLabel}
       />
-      <span className="pr-2 text-xs font-semibold text-slate-500">%</span>
+      <span className="pr-2 text-xs font-semibold text-slate-500">{suffix}</span>
     </div>
   );
 }
@@ -162,10 +187,12 @@ export function EstimateInput({
   value,
   onChange,
   inputMode,
+  readOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"];
+  readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const numeric = inputMode === "numeric" || inputMode === "decimal";
@@ -176,12 +203,16 @@ export function EstimateInput({
       value={displayValue}
       inputMode={numeric ? "decimal" : inputMode}
       step={numeric ? "0.01" : undefined}
+      readOnly={readOnly}
       onBlur={() => setDraft(null)}
       onChange={(event) => {
+        if (readOnly) return;
         if (numeric) setDraft(event.target.value);
         onChange(event.target.value);
       }}
-      className={`h-9 w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.05] px-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400/60 focus:ring-3 focus:ring-emerald-400/15 ${
+      className={`h-9 w-full min-w-0 rounded-lg border border-white/10 px-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400/60 focus:ring-3 focus:ring-emerald-400/15 ${
+        readOnly ? "bg-white/[0.025] text-slate-300" : "bg-white/[0.05]"
+      } ${
         numeric ? "text-left font-medium tabular-nums" : ""
       }`}
     />

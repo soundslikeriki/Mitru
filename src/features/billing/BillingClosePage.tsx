@@ -17,15 +17,24 @@ type CloseCandidate = {
 };
 
 export function BillingClosePage() {
-  const projects = useProjectStore((state) => state.projects);
-  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
-  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const allProjects = useProjectStore((state) => state.projects);
+  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const billingCloseRecords = useProjectStore((state) => state.billingCloseRecords);
   const createBillingCloseRun = useProjectStore((state) => state.createBillingCloseRun);
   const [closingDate, setClosingDate] = useState(getDefaultClosingDate());
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const candidates = useMemo(
     () => buildCloseCandidates({ estimates: estimateDocuments, invoices: invoiceDocuments, projects, closingDate }),
     [closingDate, estimateDocuments, invoiceDocuments, projects],

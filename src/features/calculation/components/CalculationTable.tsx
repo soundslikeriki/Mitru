@@ -24,7 +24,6 @@ type CalculationTableProps = {
   onTypeChange: (id: string, value: "labor" | "material") => void;
   onOpenMaster: (itemId: string) => void;
   onOpenMaterial: (itemId: string) => void;
-  onCreateOrder: (itemId: string) => void;
   onDelete: (itemId: string) => void;
 };
 
@@ -37,7 +36,6 @@ export function CalculationTable({
   onTypeChange,
   onOpenMaster,
   onOpenMaterial,
-  onCreateOrder,
   onDelete,
 }: CalculationTableProps) {
   const [expanded, setExpanded] = useState<ExpandedState>(true);
@@ -65,14 +63,16 @@ export function CalculationTable({
       </div>
 
       <div className="mitru-table-scroll overflow-x-auto">
-        <table className="w-full min-w-[1200px] table-fixed text-sm">
+        <table className="w-full min-w-[1500px] table-fixed text-sm">
           <colgroup>
-            <col className="w-[29%]" />
-            <col className="w-[21%]" />
+            <col className="w-[23%]" />
+            <col className="w-[17%]" />
+            <col className="w-[7%]" />
+            <col className="w-[9%]" />
             <col className="w-[8%]" />
-            <col className="w-[11%]" />
-            <col className="w-[10%]" />
-            <col className="w-[8%]" />
+            <col className="w-[7%]" />
+            <col className="w-[9%]" />
+            <col className="w-[7%]" />
             <col className="w-[10%]" />
             <col className="w-[3%]" />
           </colgroup>
@@ -82,6 +82,8 @@ export function CalculationTable({
               <th className="px-3 py-3">材料</th>
               <th className="px-3 py-3">種別</th>
               <th className="px-3 py-3 text-left">数量 / 単位</th>
+              <th className="px-3 py-3 text-left">上代</th>
+              <th className="px-3 py-3 text-left">掛率</th>
               <th className="px-3 py-3 text-left">単価</th>
               <th className="px-3 py-3 text-left">法定福利費</th>
               <th className="px-3 py-3 text-left">小計</th>
@@ -113,14 +115,13 @@ export function CalculationTable({
                   onTypeChange={onTypeChange}
                   onOpenMaster={onOpenMaster}
                   onOpenMaterial={onOpenMaterial}
-                  onCreateOrder={onCreateOrder}
                   onDelete={onDelete}
                 />
               );
             })}
             {items.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-16 text-center text-slate-500">
+                <td colSpan={10} className="px-4 py-16 text-center text-slate-500">
                   工事項目がありません。「工事項目を追加」から始められます。
                 </td>
               </tr>
@@ -145,7 +146,7 @@ function CalculationGroupRow({
 
   return (
     <tr className={`border-b border-white/10 ${node.type === "major" ? "bg-[#1E3A8A]/35" : "bg-white/[0.045]"}`}>
-      <td className="px-4 py-3" colSpan={6}>
+      <td className="px-4 py-3" colSpan={8}>
         <button
           type="button"
           onClick={onToggle}
@@ -165,7 +166,6 @@ function CalculationGroupRow({
       <td className="px-3 py-3 text-left text-sm font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
         {formatCurrency(node.totals.subtotal)}
       </td>
-      <td className="px-3 py-3" />
       <td className="py-3 pl-1 pr-4" />
     </tr>
   );

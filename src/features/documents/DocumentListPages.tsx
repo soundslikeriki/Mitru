@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { exportDocumentPdf, openSealPlacementEditorWindow } from "@/features/documents";
 import { calculateEstimateTotals, calculateLine, roundCurrency } from "@/features/calculation/lib/calculation";
+import { resolveProjectTaxRate } from "@/lib/tax";
 import { ToastMessage } from "@/features/shared/ToastMessage";
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
 import {
@@ -56,6 +57,7 @@ function buildDocumentRows<TDocument extends { projectId: string; status: string
       project: projects.find((project) => project.id === document.projectId),
     }))
     .filter(({ document, project }) => {
+      if (!project) return false;
       const searchable = getSearchFields(document, project).join(" ").toLowerCase();
       const matchesQuery = normalized.length === 0 || searchable.includes(normalized);
       const matchesStatus = status === "すべて" || document.status === status;
@@ -133,10 +135,11 @@ function buildWorkflowPrintInput({
       }))
     : projectItems.filter((item) => item.projectId === project.id);
   const costSettings = getProjectCostSettings(costSettingsByProjectId, project.id);
+  const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const totals = snapshotLines
     ? (() => {
         const beforeTax = snapshotLines.reduce((sum, line) => sum + line.subtotal, 0);
-        const tax = roundCurrency(beforeTax * taxSettings.standardTaxRate, taxSettings.taxRoundingMode);
+        const tax = roundCurrency(beforeTax * projectTaxRate, taxSettings.taxRoundingMode);
         return {
           laborCost: 0,
           welfareCost: 0,
@@ -155,7 +158,7 @@ function buildWorkflowPrintInput({
         items,
         costSettings.commonTemporaryRate,
         costSettings.siteManagementRate,
-        taxSettings.standardTaxRate,
+        projectTaxRate,
         taxSettings.taxRoundingMode,
         taxSettings.totalRoundingMode,
       );
@@ -175,6 +178,7 @@ function buildWorkflowPrintInput({
     sealSettings: getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage),
     lines,
     totals,
+    taxRate: projectTaxRate,
   };
 
   if ("deliveryDate" in document) {
@@ -194,14 +198,19 @@ function buildWorkflowPrintInput({
 
 export function EstimatesPage() {
   const navigate = useNavigate();
-  const projects = useProjectStore((state) => state.projects);
-  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const allProjects = useProjectStore((state) => state.projects);
+  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
   const updateEstimateDocumentStatus = useProjectStore((state) => state.updateEstimateDocumentStatus);
   const deleteEstimateDocument = useProjectStore((state) => state.deleteEstimateDocument);
   const [status, setStatus] = useState<EstimateDocument["status"] | "すべて">("すべて");
   const [deleteTarget, setDeleteTarget] = useState<EstimateDocument | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
   const rows = useMemo(
     () =>
       buildDocumentRows({
@@ -213,6 +222,7 @@ export function EstimatesPage() {
           document.documentNumber,
           document.title,
           document.issuedAt,
+          project?.projectNumber ?? "",
           project?.name ?? "",
           project ? getProjectClientLabel(project) : "",
         ],
@@ -265,7 +275,9 @@ export function EstimatesPage() {
                 <td className="px-4 py-4 font-medium text-white">{document.documentNumber}</td>
                 <td className="px-4 py-4">
                   <p className="font-medium text-white">{project?.name ?? "不明な案件"}</p>
-                  <p className="mt-1 text-xs text-slate-500">{document.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {project?.projectNumber ? `案件No. ${project.projectNumber} / ` : ""}{document.title}
+                  </p>
                 </td>
                 <td className="px-4 py-4 text-slate-300">{project ? getProjectClientLabel(project) : "-"}</td>
                 <td className="min-w-[110px] px-4 py-4 text-right font-semibold tabular-nums text-slate-900 dark:text-emerald-300">
@@ -333,8 +345,8 @@ export function EstimatesPage() {
 
 export function InvoicesPage() {
   const navigate = useNavigate();
-  const projects = useProjectStore((state) => state.projects);
-  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const allProjects = useProjectStore((state) => state.projects);
+  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const updateInvoiceDocumentStatus = useProjectStore((state) => state.updateInvoiceDocumentStatus);
   const registerInvoicePayment = useProjectStore((state) => state.registerInvoicePayment);
   const deleteInvoiceDocument = useProjectStore((state) => state.deleteInvoiceDocument);
@@ -342,6 +354,11 @@ export function InvoicesPage() {
   const [deleteTarget, setDeleteTarget] = useState<InvoiceDocument | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const rows = useMemo(
     () =>
       buildDocumentRows({
@@ -352,6 +369,7 @@ export function InvoicesPage() {
         getSearchFields: (document, project) => [
           document.documentNumber,
           document.invoiceDate,
+          project?.projectNumber ?? "",
           project?.name ?? "",
           project ? getProjectClientLabel(project) : "",
         ],
@@ -419,7 +437,9 @@ export function InvoicesPage() {
                 <td className="px-4 py-4 font-medium text-white">{document.documentNumber}</td>
                 <td className="px-4 py-4">
                   <p className="font-medium text-white">{project?.name ?? "不明な案件"}</p>
-                  <p className="mt-1 text-xs text-slate-500">{project ? getProjectClientLabel(project) : "-"}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {project?.projectNumber ? `案件No. ${project.projectNumber} / ` : ""}{project ? getProjectClientLabel(project) : "-"}
+                  </p>
                 </td>
                 <td className="min-w-[110px] px-4 py-4 text-right font-bold tabular-nums text-slate-900 dark:text-emerald-300">
                   {formatCurrency(getInvoiceTotalAmount(document))}
@@ -502,9 +522,9 @@ export function InvoicesPage() {
 
 export function DeliveriesPage() {
   const navigate = useNavigate();
-  const projects = useProjectStore((state) => state.projects);
+  const allProjects = useProjectStore((state) => state.projects);
   const projectItems = useProjectStore((state) => state.projectItems);
-  const customers = useProjectStore((state) => state.customers);
+  const allCustomers = useProjectStore((state) => state.customers);
   const costSettingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
   const updateProjectSealSettings = useProjectStore((state) => state.updateProjectSealSettings);
@@ -516,6 +536,8 @@ export function DeliveriesPage() {
   const [deleteTarget, setDeleteTarget] = useState<DeliveryDocument | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
   const rows = useMemo(
     () =>
       buildDocumentRows({
@@ -527,6 +549,7 @@ export function DeliveriesPage() {
           document.documentNumber,
           document.title,
           document.deliveryDate,
+          project?.projectNumber ?? "",
           project?.name ?? "",
           project ? getProjectClientLabel(project) : "",
         ],
@@ -608,7 +631,9 @@ export function DeliveriesPage() {
                 <td className="px-4 py-4 font-medium text-white">{document.documentNumber}</td>
                 <td className="px-4 py-4">
                   <p className="font-medium text-white">{project?.name ?? "不明な案件"}</p>
-                  <p className="mt-1 text-xs text-slate-500">{project ? getProjectClientLabel(project) : document.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {project?.projectNumber ? `案件No. ${project.projectNumber} / ` : ""}{project ? getProjectClientLabel(project) : document.title}
+                  </p>
                 </td>
                 <td className="min-w-[110px] px-4 py-4 text-right font-bold tabular-nums text-slate-900 dark:text-emerald-300">
                   {formatCurrency(document.totalAmount)}
@@ -692,9 +717,9 @@ export function DeliveriesPage() {
 
 export function OrdersPage() {
   const navigate = useNavigate();
-  const projects = useProjectStore((state) => state.projects);
+  const allProjects = useProjectStore((state) => state.projects);
   const projectItems = useProjectStore((state) => state.projectItems);
-  const customers = useProjectStore((state) => state.customers);
+  const allCustomers = useProjectStore((state) => state.customers);
   const costSettingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
   const updateProjectSealSettings = useProjectStore((state) => state.updateProjectSealSettings);
@@ -706,6 +731,8 @@ export function OrdersPage() {
   const [deleteTarget, setDeleteTarget] = useState<OrderDocument | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
   const rows = useMemo(
     () =>
       buildDocumentRows({
@@ -718,6 +745,7 @@ export function OrdersPage() {
           document.title,
           document.supplierName,
           document.dueDate,
+          project?.projectNumber ?? "",
           project?.name ?? "",
           project ? getProjectClientLabel(project) : "",
         ],
@@ -800,7 +828,9 @@ export function OrdersPage() {
                 <td className="px-4 py-4 font-medium text-white">{document.documentNumber}</td>
                 <td className="px-4 py-4">
                   <p className="font-medium text-white">{project?.name ?? "不明な案件"}</p>
-                  <p className="mt-1 text-xs text-slate-500">{project ? getProjectClientLabel(project) : document.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {project?.projectNumber ? `案件No. ${project.projectNumber} / ` : ""}{project ? getProjectClientLabel(project) : document.title}
+                  </p>
                 </td>
                 <td className="px-4 py-4 text-slate-300">{document.supplierName || "未設定"}</td>
                 <td className="min-w-[110px] px-4 py-4 text-right font-bold tabular-nums text-slate-900 dark:text-emerald-300">

@@ -3,22 +3,27 @@ import { formatCurrency, parseNumericInput } from "@/features/calculation/lib/fo
 import type { EstimateTotals } from "@/features/calculation/lib/calculation";
 import { formatProfitRate, profitTextClass, profitToneClass } from "@/features/calculation/lib/profit";
 import type { ProfitComparison } from "@/features/calculation/lib/profit";
-import type { ProjectCostSettings, TaxSettings } from "@/stores/project-store";
+import { formatTaxRateLabel, projectTaxRateOptions } from "@/lib/tax";
+import type { ProjectCostSettings, ProjectTaxRateType } from "@/stores/project-store";
 
 type CalculationSummaryPanelProps = {
   settings: ProjectCostSettings;
   totals: EstimateTotals;
   profitComparison: ProfitComparison;
-  taxSettings: TaxSettings;
+  taxRate: number;
+  taxRateType: ProjectTaxRateType;
   onUpdateCostSettings: (input: Partial<ProjectCostSettings>) => void;
+  onUpdateTaxRateType: (taxRateType: ProjectTaxRateType) => void;
 };
 
 export function CalculationSummaryPanel({
   settings,
   totals,
   profitComparison,
-  taxSettings,
+  taxRate,
+  taxRateType,
   onUpdateCostSettings,
+  onUpdateTaxRateType,
 }: CalculationSummaryPanelProps) {
   return (
     <aside className="h-fit rounded-2xl border border-white/10 bg-slate-950/70 p-5 shadow-2xl shadow-black/20 backdrop-blur-xl xl:sticky xl:top-4">
@@ -42,7 +47,7 @@ export function CalculationSummaryPanel({
         <div className="h-px bg-white/10" />
         <TotalRow label="総原価" value={totals.directSubtotal} strong />
         <TotalRow label="税抜合計" value={totals.beforeTax} strong />
-        <TotalRow label="消費税" value={totals.tax} />
+        <TotalRow label={`消費税（${formatTaxRateLabel(taxRate)}）`} value={totals.tax} />
         <TotalRow label="税込合計" value={totals.afterTax} accent />
       </div>
 
@@ -87,15 +92,44 @@ export function CalculationSummaryPanel({
             value={settings.siteManagementRate}
             onChange={(value) => onUpdateCostSettings({ siteManagementRate: value })}
           />
-          <RateField
-            label="消費税率"
-            value={taxSettings.standardTaxRate}
-            onChange={() => undefined}
-            disabled
-          />
+          <TaxRateSelector value={taxRateType} onChange={onUpdateTaxRateType} />
         </div>
       </div>
     </aside>
+  );
+}
+
+function TaxRateSelector({
+  value,
+  onChange,
+}: {
+  value: ProjectTaxRateType;
+  onChange: (value: ProjectTaxRateType) => void;
+}) {
+  return (
+    <div className="grid gap-1.5 text-xs text-slate-400">
+      <span>消費税率</span>
+      <div className="grid grid-cols-3 gap-2">
+        {projectTaxRateOptions.map((option) => {
+          const active = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`h-9 rounded-lg border px-2 text-xs font-semibold transition ${
+                active
+                  ? "border-emerald-300/70 bg-emerald-400/20 text-white ring-1 ring-emerald-300/30"
+                  : "border-white/10 bg-slate-950/55 text-slate-300 hover:border-emerald-300/40 hover:bg-emerald-400/10"
+              }`}
+            >
+              {option.shortLabel}
+            </button>
+          );
+        })}
+      </div>
+      <span className="text-[11px] leading-4 text-slate-500">案件単位で見積書・請求書・PDFに反映されます。</span>
+    </div>
   );
 }
 

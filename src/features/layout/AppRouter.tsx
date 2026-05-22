@@ -20,6 +20,7 @@ const WorkItemMasterSection = lazy(() => import("@/features/masters/sections/Wor
 const MaterialMasterSection = lazy(() => import("@/features/masters/sections/MaterialMasterSection").then((module) => ({ default: module.MaterialMasterSection })));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const CompanyInfoSection = lazy(() => import("@/features/settings/sections/CompanyInfoSection").then((module) => ({ default: module.CompanyInfoSection })));
+const CloudSyncSection = lazy(() => import("@/features/settings/sections/CloudSyncSection").then((module) => ({ default: module.CloudSyncSection })));
 const DataExportSection = lazy(() => import("@/features/settings/sections/DataExportSection").then((module) => ({ default: module.DataExportSection })));
 const DisplaySettingsSection = lazy(() => import("@/features/settings/sections/DisplaySettingsSection").then((module) => ({ default: module.DisplaySettingsSection })));
 const DocumentNumberSettingsSection = lazy(() => import("@/features/settings/sections/DocumentNumberSettingsSection").then((module) => ({ default: module.DocumentNumberSettingsSection })));
@@ -77,6 +78,7 @@ function SettingsRoute() {
       companySection={<CompanyInfoSection />}
       documentNumberSection={<DocumentNumberSettingsSection />}
       taxSection={<TaxSettingsSection />}
+      cloudSection={<CloudSyncSection />}
       exportSection={<DataExportSection />}
       displaySection={<DisplaySettingsSection />}
     />

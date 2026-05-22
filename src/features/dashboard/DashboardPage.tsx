@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { AlertTriangle, BarChart3, Banknote, CalendarClock, Percent, Target, TrendingUp } from "lucide-react";
 import { Link } from "react-router";
@@ -28,11 +29,11 @@ const pageBadgeClass =
 
 export function DashboardPage() {
   const {
-    projects,
+    projects: allProjects,
     projectItems,
-    customers,
-    estimateDocuments,
-    invoiceDocuments,
+    customers: allCustomers,
+    estimateDocuments: allEstimateDocuments,
+    invoiceDocuments: allInvoiceDocuments,
     orderDocuments,
     materialMasters,
   } = useProjectStore(
@@ -46,12 +47,23 @@ export function DashboardPage() {
       materialMasters: state.materialMasters,
     })),
   );
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
 
   try {
   const projectMetrics = buildProjectProfitMetrics(projects, projectItems);
-  const profitSummary = summarizeProjectProfitDashboard(projectMetrics);
+  const activeProjectMetrics = projectMetrics.filter((metric) => !isDashboardExcludedStatus(metric.project.status));
+  const profitSummary = summarizeProjectProfitDashboard(activeProjectMetrics);
   const cashflow = buildCashflowForecast({ projects, projectItems, invoiceDocuments });
-  const annualForecast = buildAnnualPerformanceForecast({ metrics: projectMetrics, invoiceDocuments });
+  const annualForecast = buildAnnualPerformanceForecast({ metrics: activeProjectMetrics, invoiceDocuments });
   const currentMonthReport = buildCurrentMonthBusinessSummary({
     projects,
     projectItems,
@@ -99,7 +111,7 @@ export function DashboardPage() {
     { label: "平均粗利率", value: formatProfitRate(profitSummary.averageGrossMarginRate), detail: "全案件平均", icon: Percent },
     { label: "赤字リスク案件", value: String(profitSummary.riskyProjectCount), detail: "粗利率30%未満", icon: AlertTriangle },
   ];
-  const riskProjects = projectMetrics
+  const riskProjects = activeProjectMetrics
     .filter((metric) => metric.actualGrossMarginRate < 0.3)
     .sort((a, b) => a.actualGrossMarginRate - b.actualGrossMarginRate)
     .slice(0, 4);
@@ -235,7 +247,7 @@ export function DashboardPage() {
             </Button>
           </div>
           <div className="divide-y divide-white/10">
-            {projectMetrics.slice(0, 3).map((metric, index) => (
+            {activeProjectMetrics.slice(0, 3).map((metric, index) => (
               <ProjectSummaryRow key={metric.project.id} metric={metric} index={index} />
             ))}
           </div>
@@ -381,6 +393,10 @@ function getMonthKey(value?: string) {
 
 function safeDateString(value?: string) {
   return typeof value === "string" && value.trim() ? value : new Date().toISOString().slice(0, 10);
+}
+
+function isDashboardExcludedStatus(status: ProjectStatus) {
+  return status === "失注" || status === "破棄";
 }
 
 function ProjectSummaryRow({ metric, index }: { metric: ProjectProfitMetrics; index: number }) {
@@ -718,10 +734,20 @@ function CashflowBar({
 function StatusBadge({ status }: { status: ProjectStatus }) {
   const className =
     status === "施工中"
-      ? "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/[0.12] dark:text-emerald-300"
-      : status === "完了"
+      ? "border-orange-300 bg-orange-100 text-orange-800 dark:border-orange-400/30 dark:bg-orange-400/[0.12] dark:text-orange-200"
+      : status === "契約済"
         ? "border-blue-300 bg-blue-100 text-blue-800 dark:border-blue-300/25 dark:bg-blue-400/[0.12] dark:text-blue-200"
-        : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-300/25 dark:bg-amber-400/[0.12] dark:text-amber-200";
+        : status === "完了"
+          ? "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/[0.12] dark:text-emerald-200"
+          : status === "請求済み"
+            ? "border-purple-300 bg-purple-100 text-purple-800 dark:border-purple-400/30 dark:bg-purple-400/[0.12] dark:text-purple-200"
+            : status === "請求締済"
+              ? "border-indigo-300 bg-indigo-100 text-indigo-800 dark:border-indigo-400/30 dark:bg-indigo-400/[0.12] dark:text-indigo-200"
+              : status === "失注"
+                ? "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/[0.12] dark:text-red-200"
+                : status === "破棄"
+                  ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-400/30 dark:bg-slate-400/[0.12] dark:text-slate-200"
+                  : "border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-300/25 dark:bg-amber-400/[0.12] dark:text-amber-200";
 
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${className}`}>

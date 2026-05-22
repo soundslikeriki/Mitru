@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { motion } from "framer-motion";
 import { BarChart3, Download, Filter, TrendingUp } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -27,7 +27,13 @@ const periodOptions: Array<{ value: ReportPeriodPreset; label: string }> = [
 ];
 
 export function ReportsPage() {
-  const { projects, projectItems, customers, estimateDocuments, invoiceDocuments } = useProjectStore(
+  const {
+    projects: allProjects,
+    projectItems,
+    customers: allCustomers,
+    estimateDocuments: allEstimateDocuments,
+    invoiceDocuments: allInvoiceDocuments,
+  } = useProjectStore(
     useShallow((state) => ({
       projects: state.projects,
       projectItems: state.projectItems,
@@ -39,22 +45,32 @@ export function ReportsPage() {
   const [filters, setFilters] = useState<ReportFilters>(() => createDefaultReportFilters());
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const workCategories = useMemo(() => getReportWorkCategories(projects, projectItems), [projectItems, projects]);
   const report = useMemo(
     () => buildReportsData({ projects, projectItems, customers, estimateDocuments, invoiceDocuments, filters }),
     [customers, estimateDocuments, filters, invoiceDocuments, projectItems, projects],
   );
 
-  const updatePreset = (preset: ReportPeriodPreset) => {
+  const updatePreset = useCallback((preset: ReportPeriodPreset) => {
     const range = resolveReportPresetRange(preset);
     setFilters((current) => ({
       ...current,
       preset,
       ...(range ?? {}),
     }));
-  };
+  }, []);
 
-  const exportCsv = async () => {
+  const exportCsv = useCallback(async () => {
     try {
       const saved = await downloadTextFile(
         `mitru_report_${filters.from}_${filters.to}.csv`,
@@ -73,7 +89,7 @@ export function ReportsPage() {
       });
       window.setTimeout(() => setToast(null), 3200);
     }
-  };
+  }, [filters.from, filters.to, report]);
 
   return (
     <div className="w-full max-w-none">

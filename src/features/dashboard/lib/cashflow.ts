@@ -51,7 +51,7 @@ export function buildCashflowForecast({
   }, new Map<string, number>());
 
   projects.forEach((project) => {
-    if (project.status !== "完了" && project.status !== "請求済み") return;
+    if (!isRevenueRecognizedStatus(project.status)) return;
     const recognizedRevenue = invoiceRevenueByProjectId.get(project.id) ?? 0;
     if (recognizedRevenue <= 0) return;
     const dueDate = parseDate(project.expectedPaymentDate || project.endDate || project.updatedAt);
@@ -61,7 +61,7 @@ export function buildCashflowForecast({
   });
 
   projects
-    .filter((project) => project.status === "施工中" || project.status === "完了")
+    .filter((project) => project.status === "施工中" || project.status === "完了" || project.status === "請求締済")
     .forEach((project) => {
       const items = projectItems.filter((item) => item.projectId === project.id);
       const actualCost = summarizeActualProfit(items).directCost;
@@ -98,4 +98,8 @@ function parseDate(value?: string) {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isRevenueRecognizedStatus(status: Project["status"]) {
+  return status === "完了" || status === "請求済み" || status === "請求締済";
 }

@@ -327,7 +327,7 @@ function CategoryButton({
       onClick={onClick}
       className={`rounded-lg px-3 py-2 text-left text-sm transition ${
         active
-          ? "bg-[#1E3A8A] font-semibold text-white ring-1 ring-emerald-400/25"
+          ? "bg-[#1E3A8A] font-semibold !text-white ring-1 ring-emerald-400/25 hover:!text-white"
           : "bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white"
       }`}
     >

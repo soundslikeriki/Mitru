@@ -3,13 +3,15 @@ import type { CustomerStatus, CustomerType } from "@/stores/project-store";
 import { useProjectStore } from "@/stores/project-store";
 
 export function useCustomers() {
-  const customers = useProjectStore((state) => state.customers);
-  const projects = useProjectStore((state) => state.projects);
+  const allCustomers = useProjectStore((state) => state.customers);
+  const allProjects = useProjectStore((state) => state.projects);
   const deleteCustomer = useProjectStore((state) => state.deleteCustomer);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<CustomerType | "すべて">("すべて");
   const [status, setStatus] = useState<CustomerStatus | "すべて">("すべて");
 
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
   const rows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return customers.filter((customer) => {

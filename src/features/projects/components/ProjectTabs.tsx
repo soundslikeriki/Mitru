@@ -30,7 +30,7 @@ const detailTabs: Array<{ value: ProjectDetailTab; label: string }> = [
   { value: "invoice", label: "請求書" },
 ];
 
-const projectStatusOptions: ProjectStatus[] = ["見積中", "契約済", "施工中", "完了", "請求済み"];
+const projectStatusOptions: ProjectStatus[] = ["見積中", "契約済", "施工中", "完了", "請求済み", "請求締済", "失注", "破棄"];
 
 type ProjectTabsProps = {
   activeTab: ProjectDetailTab;

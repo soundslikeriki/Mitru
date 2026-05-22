@@ -89,6 +89,14 @@ body {
   font-family: var(--font-sans);
 }
 
+th {
+  min-width: max-content;
+  white-space: nowrap;
+  word-break: keep-all;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+}
+
 .light ::selection {
   color: #1e2937;
 }

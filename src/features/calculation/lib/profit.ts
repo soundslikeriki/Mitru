@@ -28,6 +28,15 @@ export function getEstimatedUnitCost(item: ProjectItem) {
     const line = calculateLine(item);
     return item.quantity > 0 ? line.subtotal / item.quantity : 0;
   }
+  if (
+    item.itemType === "material" &&
+    typeof item.baseCost === "number" &&
+    item.baseCost > 0 &&
+    typeof item.markupRate === "number" &&
+    item.markupRate > 0
+  ) {
+    return item.baseCost * item.markupRate;
+  }
   if (typeof item.estimatedUnitCost === "number" && item.estimatedUnitCost > 0) return item.estimatedUnitCost;
   if (item.materialUnitCost > 0) return item.materialUnitCost;
   const line = calculateLine(item);
@@ -61,7 +70,7 @@ export function getActualLaborUnitCost(item: ProjectItem) {
 
 export function calculateEstimatedLaborCost(item: ProjectItem) {
   if (item.itemType === "material") return 0;
-  return item.quantity * getEstimatedLaborUnitCost(item);
+  return item.quantity * getActualLaborUnitCost(item);
 }
 
 export function calculateEstimatedWelfareCost(item: ProjectItem) {
@@ -91,7 +100,7 @@ export function calculateEstimatedProfit(item: ProjectItem): ProfitSnapshot {
   const laborCost = calculateEstimatedLaborCost(item);
   const welfareCost = calculateEstimatedWelfareCost(item);
   const totalLaborCost = laborCost + welfareCost;
-  const materialCost = item.itemType === "material" ? line.materialCost : 0;
+  const materialCost = item.itemType === "material" ? item.quantity * getActualUnitCost(item) : 0;
   const directCost = totalLaborCost + materialCost;
   const grossProfit = revenue - directCost;
 

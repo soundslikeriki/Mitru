@@ -772,13 +772,13 @@ function MaterialMasterDialog({
       return;
     }
 
-    console.log("🔍 Web検索実行:", query);
+    console.info("Web検索実行:", query);
     const fallbackUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("open_web_search", { query });
-      console.log("✅ shell.open 成功");
+      console.info("shell.open 成功");
     } catch (err) {
       console.error("❌ shell.open エラー:", err);
       const opened = window.open(fallbackUrl, "_blank", "noopener,noreferrer");

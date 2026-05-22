@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
 import {
   getProjectCompanyName,
@@ -14,10 +14,11 @@ export function useProjectDetail() {
   const location = useLocation();
   const navigate = useNavigate();
   const project = useProjectStore((state) =>
-    state.projects.find((candidate) => candidate.id === id),
+    state.projects.find((candidate) => candidate.id === id && !candidate.deletedAt),
   );
   const updateProject = useProjectStore((state) => state.updateProject);
-  const customers = useProjectStore((state) => state.customers);
+  const allCustomers = useProjectStore((state) => state.customers);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
   const [form, setForm] = useState<Project | undefined>(project);
   const [activeTab, setActiveTab] = useState<ProjectDetailTab>("overview");
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);

@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, PenLine } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -19,10 +19,19 @@ import { type Customer, type CustomerInput, useProjectStore } from "@/stores/pro
 export function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const customer = useProjectStore((state) => state.customers.find((item) => item.id === id));
-  const projects = useProjectStore((state) => state.projects);
+  const customer = useProjectStore((state) => state.customers.find((item) => item.id === id && !item.deletedAt));
+  const allProjects = useProjectStore((state) => state.projects);
   const updateCustomer = useProjectStore((state) => state.updateCustomer);
   const [form, setForm] = useState<Customer | undefined>(customer);
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const customerProjects = useMemo(
+    () => (customer ? getCustomerProjects(projects, customer) : []),
+    [customer, projects],
+  );
+  const totalAmount = useMemo(
+    () => customerProjects.reduce((sum, project) => sum + project.totalAmount, 0),
+    [customerProjects],
+  );
 
   useEffect(() => setForm(customer), [customer]);
 
@@ -35,8 +44,6 @@ export function CustomerDetailPage() {
     );
   }
 
-  const customerProjects = getCustomerProjects(projects, customer);
-  const totalAmount = customerProjects.reduce((sum, project) => sum + project.totalAmount, 0);
   const update = (field: keyof CustomerInput, value: string) =>
     setForm((current) => current ? { ...current, [field]: normalizeCustomerInputField(field, value) } : current);
 

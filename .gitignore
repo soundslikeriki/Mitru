@@ -6,4 +6,6 @@ dist-ssr
 *.sqlite-*
 src-tauri/target
 src-tauri/gen/schemas
+src-tauri/updater/*.key
+src-tauri/updater/*.key.*
 .DS_Store

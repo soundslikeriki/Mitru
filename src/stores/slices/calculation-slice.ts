@@ -1,4 +1,5 @@
 import type {
+  CalculationTemplate,
   ProjectCostSettings,
   ProjectItem,
   ProjectItemTemplateInput,
@@ -46,6 +47,35 @@ export function createCalculationSlice(
       set({ projectItems: [item, ...get().projectItems] });
       return item;
     },
+    saveCalculationTemplate: (projectId: string, input: { name: string; customerId?: string | null }) => {
+      const sourceItems = get().projectItems.filter((item) => item.projectId === projectId);
+      if (sourceItems.length === 0) throw new Error("テンプレートとして保存できる積算行がありません。");
+      const timestamp = now();
+      const template: CalculationTemplate = {
+        id: `calculation-template-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: input.name.trim() || "名称未設定テンプレート",
+        customerId: input.customerId ?? null,
+        items: sourceItems.map(toProjectItemTemplateInput),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      set({ calculationTemplates: [template, ...get().calculationTemplates] });
+      return template;
+    },
+    applyCalculationTemplate: (projectId: string, templateId: string) => {
+      const template = get().calculationTemplates.find((item) => item.id === templateId);
+      if (!template) return [];
+      const timestamp = now();
+      const items = template.items.map((templateItem, index) => ({
+        ...templateItem,
+        id: `item-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+        projectId,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }));
+      set({ projectItems: [...items, ...get().projectItems] });
+      return items;
+    },
     importSampleItems: (projectId: string) => {
       set({ projectItems: [...createSampleItems(projectId), ...get().projectItems] });
     },
@@ -73,4 +103,14 @@ export function createCalculationSlice(
       });
     },
   };
+}
+
+function toProjectItemTemplateInput(item: ProjectItem): ProjectItemTemplateInput {
+  const { id, projectId, createdAt, updatedAt, syncMetadata, ...template } = item;
+  void id;
+  void projectId;
+  void createdAt;
+  void updatedAt;
+  void syncMetadata;
+  return template;
 }

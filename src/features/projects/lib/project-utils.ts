@@ -1,5 +1,6 @@
 import type { Customer, Project } from "@/stores/project-store";
 import type { ProjectDetailTab } from "@/features/projects/types";
+import type { CloudSyncUser } from "@/stores/project-store";
 
 export function getProjectClientLabel(project: Pick<Project, "clientName" | "clientCompanyName">) {
   return project.clientName?.trim() || project.clientCompanyName?.trim() || "-";
@@ -14,6 +15,13 @@ export function formatCustomerOptionLabel(customer: Pick<Customer, "name" | "com
   const companyName = customer.companyName.trim();
   if (name && companyName) return `${name}（${companyName}）`;
   return name || companyName || "名称未設定";
+}
+
+export function getProjectUserLabel(userId: string | null | undefined, currentUser?: CloudSyncUser | null) {
+  if (!userId) return "未担当";
+  if (userId === "local") return "ローカル";
+  if (currentUser?.id === userId) return currentUser.name || currentUser.email || "自分";
+  return userId;
 }
 
 export function detailTabClass(active: boolean) {

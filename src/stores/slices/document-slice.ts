@@ -14,6 +14,7 @@ import type {
   ProjectSealSettings,
   SliceContext,
 } from "./types";
+import { resolveProjectTaxRate } from "@/lib/tax";
 
 export const quoteSliceVersion = 1;
 export const invoiceSliceVersion = 1;
@@ -57,7 +58,7 @@ function getInvoicePaymentTotal(document: InvoiceDocument) {
 }
 
 function sumPaymentRecords(records: PaymentRecord[] | undefined) {
-  return (records ?? []).reduce((sum, record) => sum + record.amount, 0);
+  return (records ?? []).reduce((sum, record) => (record.deletedAt ? sum : sum + record.amount), 0);
 }
 
 function createPaymentRecordId() {
@@ -157,6 +158,7 @@ export function createQuoteSlice(
         projectId,
         ...input,
         documentNumber: generateDocumentNumber(currentNumberSettings.estimate, get().estimateDocuments),
+        deletedAt: null,
         createdAt: now(),
         updatedAt: now(),
       };
@@ -188,6 +190,8 @@ export function createQuoteSlice(
         version,
         status: "下書き",
         issuedAt: timestamp.slice(0, 10),
+        syncMetadata: undefined,
+        deletedAt: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -200,7 +204,9 @@ export function createQuoteSlice(
     ) => {
       set({
         estimateDocuments: get().estimateDocuments.map((document) =>
-          document.id === documentId ? { ...document, ...input, updatedAt: now() } : document,
+          document.id === documentId
+            ? { ...document, ...input, syncMetadata: markSyncMetadataDirty(document.syncMetadata), updatedAt: now() }
+            : document,
         ),
       });
     },
@@ -208,19 +214,28 @@ export function createQuoteSlice(
       const target = get().estimateDocuments.find((document) => document.id === documentId);
       set({
         estimateDocuments: get().estimateDocuments.map((document) =>
-          document.id === documentId ? { ...document, status, updatedAt: now() } : document,
+          document.id === documentId
+            ? { ...document, status, syncMetadata: markSyncMetadataDirty(document.syncMetadata), updatedAt: now() }
+            : document,
         ),
         projects:
           target && status === "発行済"
             ? get().projects.map((project) =>
-                project.id === target.projectId ? { ...project, status: "見積中", updatedAt: now() } : project,
+                project.id === target.projectId
+                  ? { ...project, status: "見積中", syncMetadata: markSyncMetadataDirty(project.syncMetadata), updatedAt: now() }
+                  : project,
               )
             : get().projects,
       });
     },
     deleteEstimateDocument: (documentId: string) => {
+      const deletedAt = now();
       set({
-        estimateDocuments: get().estimateDocuments.filter((document) => document.id !== documentId),
+        estimateDocuments: get().estimateDocuments.map((document) =>
+          document.id === documentId
+            ? { ...document, deletedAt, syncMetadata: markSyncMetadataDirty(document.syncMetadata), updatedAt: deletedAt }
+            : document,
+        ),
       });
     },
   };
@@ -267,8 +282,13 @@ export function createInvoiceSlice(
         projectId,
         ...input,
         paidAmount: input.paidAmount ?? sumPaymentRecords(input.paymentRecords),
-        paymentRecords: input.paymentRecords ?? [],
+        paymentRecords: (input.paymentRecords ?? []).map((record) => ({
+          ...record,
+          updatedAt: record.updatedAt || record.createdAt || now(),
+          deletedAt: record.deletedAt ?? null,
+        })),
         documentNumber: generateDocumentNumber(currentNumberSettings.invoice, get().invoiceDocuments),
+        deletedAt: null,
         createdAt: now(),
         updatedAt: now(),
       };
@@ -300,10 +320,12 @@ export function createInvoiceSlice(
         version,
         status: "下書き",
         invoiceDate: timestamp.slice(0, 10),
+        syncMetadata: undefined,
         createdAt: timestamp,
         updatedAt: timestamp,
         paidAmount: 0,
         paymentRecords: [],
+        deletedAt: null,
       };
       set({ invoiceDocuments: [duplicated, ...get().invoiceDocuments] });
       return duplicated;
@@ -314,7 +336,9 @@ export function createInvoiceSlice(
     ) => {
       set({
         invoiceDocuments: get().invoiceDocuments.map((document) =>
-          document.id === documentId ? { ...document, ...input, updatedAt: now() } : document,
+          document.id === documentId
+            ? { ...document, ...input, syncMetadata: markSyncMetadataDirty(document.syncMetadata), updatedAt: now() }
+            : document,
         ),
       });
     },
@@ -326,6 +350,7 @@ export function createInvoiceSlice(
             ? {
                 ...document,
                 status,
+                syncMetadata: markSyncMetadataDirty(document.syncMetadata),
                 paidAmount:
                   status === "入金済" && sumPaymentRecords(document.paymentRecords) === 0
                     ? getInvoicePaymentTotal(document)
@@ -337,22 +362,27 @@ export function createInvoiceSlice(
         projects:
           target && status === "発行済"
             ? get().projects.map((project) =>
-                project.id === target.projectId ? { ...project, status: "請求済み", updatedAt: now() } : project,
+                project.id === target.projectId
+                  ? { ...project, status: "請求済み", syncMetadata: markSyncMetadataDirty(project.syncMetadata), updatedAt: now() }
+                  : project,
               )
             : get().projects,
       });
     },
     registerInvoicePayment: (
       invoiceId: string,
-      input: Omit<PaymentRecord, "id" | "invoiceId" | "createdAt">,
+      input: Omit<PaymentRecord, "id" | "invoiceId" | "createdAt" | "updatedAt">,
     ) => {
       const target = get().invoiceDocuments.find((document) => document.id === invoiceId);
       if (!target) return undefined;
+      const timestamp = now();
       const record: PaymentRecord = {
         id: createPaymentRecordId(),
         invoiceId,
         ...input,
-        createdAt: now(),
+        deletedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
       };
       const nextRecords = [...(target.paymentRecords ?? []), record];
       const paidAmount = sumPaymentRecords(nextRecords);
@@ -364,18 +394,59 @@ export function createInvoiceSlice(
                 ...document,
                 paymentRecords: nextRecords,
                 paidAmount,
+                syncMetadata: markSyncMetadataDirty(document.syncMetadata),
                 status: paidAmount >= invoiceTotal ? "入金済" : document.status === "入金済" ? "発行済" : document.status,
-                updatedAt: now(),
+                updatedAt: timestamp,
               }
             : document,
         ),
       });
       return record;
     },
+    updateInvoicePayment: (
+      invoiceId: string,
+      paymentId: string,
+      input: Partial<Omit<PaymentRecord, "id" | "invoiceId" | "createdAt" | "updatedAt" | "syncMetadata" | "deletedAt">>,
+    ) => {
+      const target = get().invoiceDocuments.find((document) => document.id === invoiceId);
+      if (!target) return;
+      const updatedAt = now();
+      const nextRecords = (target.paymentRecords ?? []).map((record) =>
+        record.id === paymentId
+          ? {
+              ...record,
+              ...input,
+              syncMetadata: markSyncMetadataDirty(record.syncMetadata),
+              updatedAt,
+            }
+          : record,
+      );
+      const paidAmount = sumPaymentRecords(nextRecords);
+      const invoiceTotal = getInvoicePaymentTotal(target);
+      set({
+        invoiceDocuments: get().invoiceDocuments.map((document) =>
+          document.id === invoiceId
+            ? {
+                ...document,
+                paymentRecords: nextRecords,
+                paidAmount,
+                syncMetadata: markSyncMetadataDirty(document.syncMetadata),
+                status: paidAmount >= invoiceTotal ? "入金済" : document.status === "入金済" ? "発行済" : document.status,
+                updatedAt,
+              }
+            : document,
+        ),
+      });
+    },
     deleteInvoicePayment: (invoiceId: string, paymentId: string) => {
       const target = get().invoiceDocuments.find((document) => document.id === invoiceId);
       if (!target) return;
-      const nextRecords = (target.paymentRecords ?? []).filter((record) => record.id !== paymentId);
+      const deletedAt = now();
+      const nextRecords = (target.paymentRecords ?? []).map((record) =>
+        record.id === paymentId
+          ? { ...record, deletedAt, syncMetadata: markSyncMetadataDirty(record.syncMetadata), updatedAt: deletedAt }
+          : record,
+      );
       const paidAmount = sumPaymentRecords(nextRecords);
       set({
         invoiceDocuments: get().invoiceDocuments.map((document) =>
@@ -384,6 +455,7 @@ export function createInvoiceSlice(
                 ...document,
                 paymentRecords: nextRecords,
                 paidAmount,
+                syncMetadata: markSyncMetadataDirty(document.syncMetadata),
                 status: document.status === "入金済" && paidAmount < getInvoicePaymentTotal(document) ? "発行済" : document.status,
                 updatedAt: now(),
               }
@@ -392,8 +464,24 @@ export function createInvoiceSlice(
       });
     },
     deleteInvoiceDocument: (documentId: string) => {
+      const deletedAt = now();
       set({
-        invoiceDocuments: get().invoiceDocuments.filter((document) => document.id !== documentId),
+        invoiceDocuments: get().invoiceDocuments.map((document) =>
+          document.id === documentId
+            ? {
+                ...document,
+                deletedAt,
+                syncMetadata: markSyncMetadataDirty(document.syncMetadata),
+                updatedAt: deletedAt,
+                paymentRecords: (document.paymentRecords ?? []).map((record) => ({
+                  ...record,
+                  deletedAt,
+                  syncMetadata: markSyncMetadataDirty(record.syncMetadata),
+                  updatedAt: deletedAt,
+                })),
+              }
+            : document,
+        ),
         billingCloseRecords: get().billingCloseRecords.map((record) => ({
           ...record,
           createdInvoiceIds: record.createdInvoiceIds.filter((invoiceId) => invoiceId !== documentId),
@@ -412,13 +500,13 @@ export function createInvoiceSlice(
       if (estimates.length === 0) return [];
 
       const projectsById = new Map(get().projects.map((project) => [project.id, project]));
-      const taxRate = get().taxSettings.standardTaxRate;
       let nextInvoiceDocuments = [...get().invoiceDocuments];
       let currentNumberSettings = get().documentNumberSettings;
       const closeRecords = new Map<string, BillingCloseRecord>();
 
       estimates.forEach((estimate) => {
         const project = projectsById.get(estimate.projectId);
+        const taxRate = resolveProjectTaxRate(project?.taxRateType, get().taxSettings.standardTaxRate);
         const customerKey = project?.customerId || project?.clientCompanyName || project?.clientName || "unknown";
         const clientName = project?.clientCompanyName || project?.clientName || "未設定の取引先";
         const version =
@@ -441,6 +529,7 @@ export function createInvoiceSlice(
           id: `invoice-doc-${Date.now()}-${nextInvoiceDocuments.length}`,
           projectId: estimate.projectId,
           ...invoiceInput,
+          deletedAt: null,
           createdAt: timestamp,
           updatedAt: timestamp,
         };
@@ -479,6 +568,12 @@ export function createInvoiceSlice(
       return records;
     },
   };
+}
+
+function markSyncMetadataDirty<TSyncMetadata extends { lastSyncedAt: string | null } | undefined>(
+  syncMetadata: TSyncMetadata,
+) {
+  return syncMetadata ? { ...syncMetadata, lastSyncedAt: null } : syncMetadata;
 }
 
 export function createDeliverySlice({ set, get, now }: SliceContext) {

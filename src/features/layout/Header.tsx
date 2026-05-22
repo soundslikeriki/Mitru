@@ -19,15 +19,24 @@ type GlobalSearchResult = {
 export function Header() {
   const location = useLocation();
   const navigate = useNavigate();
-  const projects = useProjectStore((state) => state.projects);
-  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
-  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const allProjects = useProjectStore((state) => state.projects);
+  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const deliveryDocuments = useProjectStore((state) => state.deliveryDocuments);
   const orderDocuments = useProjectStore((state) => state.orderDocuments);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const headerMeta = getHeaderMeta(location.pathname);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const searchResults = useMemo<GlobalSearchResult[]>(() => {
     if (!normalizedSearchQuery) return [];
 
@@ -36,6 +45,7 @@ export function Header() {
 
     projects.forEach((project) => {
       const fields = [
+        project.projectNumber,
         project.name,
         project.clientName,
         project.clientCompanyName,
@@ -47,7 +57,7 @@ export function Header() {
       results.push({
         id: `project-${project.id}`,
         kind: "project",
-        title: project.name,
+        title: `${project.projectNumber || "未採番"} / ${project.name}`,
         description: project.clientName || project.clientCompanyName || "顧客未設定",
         date: project.startDate || project.updatedAt,
         path: `/projects/${project.id}`,
@@ -61,6 +71,7 @@ export function Header() {
         document.documentNumber,
         document.title,
         document.status,
+        project?.projectNumber,
         project?.name,
         project?.clientName,
         project?.clientCompanyName,
@@ -83,6 +94,7 @@ export function Header() {
       const fields = [
         document.documentNumber,
         document.status,
+        project?.projectNumber,
         project?.name,
         project?.clientName,
         project?.clientCompanyName,
@@ -105,6 +117,7 @@ export function Header() {
       const fields = [
         document.documentNumber,
         document.title,
+        project?.projectNumber,
         project?.name,
         project?.clientName,
         project?.clientCompanyName,
@@ -128,6 +141,7 @@ export function Header() {
         document.documentNumber,
         document.title,
         document.supplierName,
+        project?.projectNumber,
         project?.name,
         project?.clientName,
         project?.clientCompanyName,
@@ -158,30 +172,33 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-white/10 bg-slate-950/55 px-4 backdrop-blur-2xl sm:px-6 lg:px-8">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="sticky top-0 z-20 flex h-[72px] min-w-0 items-center justify-between overflow-visible border-b border-white/10 bg-slate-950/55 px-4 backdrop-blur-2xl sm:px-6 lg:px-8">
+      <div className="flex shrink-0 items-center gap-3">
         <MobileSidebar />
         <BrandLogo className="sm:hidden" markClassName="size-10" textClassName="text-white" />
       </div>
 
-      <div className="flex min-w-0 flex-1 items-center justify-between gap-4 pl-4 md:pl-0">
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-[0.78rem] font-medium uppercase tracking-[0.08em] text-slate-400 dark:text-slate-500">
+      <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-between gap-3 pl-4 md:pl-0 lg:gap-5">
+        <div className="min-w-[140px] flex-none shrink-0 overflow-hidden leading-tight sm:min-w-[190px] lg:min-w-[220px] xl:min-w-[250px]">
+          <p className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap break-keep text-[0.72rem] font-medium uppercase tracking-[0.08em] text-slate-400 [text-orientation:mixed] [writing-mode:horizontal-tb] dark:text-slate-500 sm:text-[0.78rem]">
             {headerMeta.englishSection}
           </p>
-          <h1 className="truncate text-xl font-semibold tracking-normal text-slate-900 dark:text-white sm:text-2xl">
+          <h1 className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap break-keep text-lg font-semibold tracking-normal text-slate-900 [text-orientation:mixed] [writing-mode:horizontal-tb] dark:text-white sm:text-xl xl:text-2xl">
             {headerMeta.section}
           </h1>
         </div>
-        <div className="relative hidden lg:block">
-          <label className="flex h-10 w-[300px] items-center gap-3 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-400 transition focus-within:border-emerald-400/55 focus-within:bg-white/[0.09]">
+        <div className="relative hidden 2xl:block">
+          <label className="flex h-10 w-[min(30vw,300px)] min-w-[220px] items-center gap-3 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-400 transition focus-within:border-emerald-400/55 focus-within:bg-white/[0.09]">
             <Search className="size-4 shrink-0" />
             <input
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setSearchFocused(true);
+              }}
               onFocus={() => setSearchFocused(true)}
               onBlur={() => window.setTimeout(() => setSearchFocused(false), 140)}
-              placeholder="案件名・顧客名・書類番号で検索"
+              placeholder="案件No.・案件名・顧客名・書類番号で検索"
               className="h-full min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
             />
           </label>

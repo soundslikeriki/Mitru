@@ -13,9 +13,14 @@ import {
 import { useProjectStore } from "@/stores/project-store";
 
 export function PaymentsPage() {
-  const projects = useProjectStore((state) => state.projects);
-  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const allProjects = useProjectStore((state) => state.projects);
+  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const [statusFilter, setStatusFilter] = useState<PaymentCollectionStatus | "すべて">("すべて");
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const summaries = useMemo(
     () => buildPaymentInvoiceSummaries({ invoices: invoiceDocuments, projects }),
     [invoiceDocuments, projects],

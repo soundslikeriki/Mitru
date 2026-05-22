@@ -46,6 +46,13 @@ export type QuotePrintMeta = {
   displayTotal?: number;
 };
 
+export type InvoiceBillingSummary = {
+  previousInvoiceAmount: number;
+  paidAmount: number;
+  carryOverAmount: number;
+  currentInvoiceAmount: number;
+};
+
 export type PrintPreviewInput =
   | {
       kind: "quote";
@@ -58,6 +65,7 @@ export type PrintPreviewInput =
       meta: QuotePrintMeta;
       lines: QuotePdfLine[];
       totals: EstimateTotals;
+      taxRate: number;
     }
   | {
       kind: "invoice";
@@ -70,6 +78,7 @@ export type PrintPreviewInput =
       invoiceSettings: ProjectInvoiceSettings;
       invoiceLines: InvoicePdfLine[];
       invoiceTotals: InvoiceTotals;
+      billingSummary?: InvoiceBillingSummary;
       taxRate: number;
     }
   | {
@@ -82,6 +91,7 @@ export type PrintPreviewInput =
       document: DeliveryDocument;
       lines: QuotePdfLine[];
       totals: EstimateTotals;
+      taxRate: number;
     }
   | {
       kind: "order";
@@ -93,4 +103,5 @@ export type PrintPreviewInput =
       document: OrderDocument;
       lines: QuotePdfLine[];
       totals: EstimateTotals;
+      taxRate: number;
     };

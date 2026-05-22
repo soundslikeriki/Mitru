@@ -48,6 +48,15 @@ function resolveWelfareRate(item: ProjectItem) {
 }
 
 function resolveMaterialUnitCost(item: ProjectItem) {
+  if (
+    item.itemType === "material" &&
+    typeof item.baseCost === "number" &&
+    item.baseCost > 0 &&
+    typeof item.markupRate === "number" &&
+    item.markupRate > 0
+  ) {
+    return item.baseCost * item.markupRate;
+  }
   if (typeof item.estimatedUnitCost === "number" && item.estimatedUnitCost > 0) {
     return item.estimatedUnitCost;
   }

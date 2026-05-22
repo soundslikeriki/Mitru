@@ -4,6 +4,7 @@ import {
   calculateLine,
 } from "@/features/calculation/lib/calculation";
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
+import { resolveProjectTaxRate } from "@/lib/tax";
 import {
   getProjectCostSettings,
   getProjectQuoteSettings,
@@ -18,8 +19,8 @@ export function useProjectQuote(project: Project) {
   const settingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const quoteSettingsByProjectId = useProjectStore((state) => state.quoteSettingsByProjectId);
   const updateQuoteSettings = useProjectStore((state) => state.updateQuoteSettings);
-  const customers = useProjectStore((state) => state.customers);
-  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const allCustomers = useProjectStore((state) => state.customers);
+  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
   const createEstimateDocument = useProjectStore((state) => state.createEstimateDocument);
   const duplicateEstimateDocument = useProjectStore((state) => state.duplicateEstimateDocument);
   const deleteEstimateDocument = useProjectStore((state) => state.deleteEstimateDocument);
@@ -32,6 +33,11 @@ export function useProjectQuote(project: Project) {
     () => allItems.filter((item) => item.projectId === project.id),
     [allItems, project.id],
   );
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
   const projectEstimateDocuments = useMemo(
     () => estimateDocuments.filter((document) => document.projectId === project.id).sort((a, b) => b.version - a.version),
     [estimateDocuments, project.id],
@@ -40,11 +46,12 @@ export function useProjectQuote(project: Project) {
   const quoteSettings = getProjectQuoteSettings(quoteSettingsByProjectId, project.id);
   const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
+  const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const totals = calculateEstimateTotals(
     items,
     costSettings.commonTemporaryRate,
     costSettings.siteManagementRate,
-    taxSettings.standardTaxRate,
+    projectTaxRate,
     taxSettings.taxRoundingMode,
     taxSettings.totalRoundingMode,
   );
@@ -69,6 +76,7 @@ export function useProjectQuote(project: Project) {
     companyInfo,
     pdfTemplateSettings,
     taxSettings,
+    projectTaxRate,
     quoteSettings,
     sealSettings,
     recipientInfo,

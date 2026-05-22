@@ -15,12 +15,14 @@ import {
   documentRowsPerPage,
   getProjectRecipientLabel,
 } from "@/features/documents/document-helpers";
-import type { DocumentRecipientInfo, InvoicePdfLine, PrintPreviewInput, QuotePdfLine, QuotePrintMeta } from "@/features/documents/types";
+import { formatConsumptionTaxLabel, resolveProjectTaxRate } from "@/lib/tax";
+import type { DocumentRecipientInfo, InvoiceBillingSummary, InvoicePdfLine, PrintPreviewInput, QuotePdfLine, QuotePrintMeta } from "@/features/documents/types";
 import {
   getProjectCostSettings,
   getProjectInvoiceSettings,
   getProjectQuoteSettings,
   getProjectSealSettings,
+  type BankAccount,
   type CompanyInfo,
   type EstimateDocument,
   type InvoiceDocument,
@@ -41,21 +43,55 @@ function getActiveSealImage(companyInfo: CompanyInfoState, settings: ProjectSeal
   return settings.sealImage || companyInfo.sealImage;
 }
 
-function paginateRows<T>(rows: T[], rowsPerPage: number) {
+function paginateRowsByWeight<T>(rows: T[], getWeight: (row: T) => number, maxPageWeight = 9) {
   if (rows.length === 0) return [[]] as T[][];
   const pages: T[][] = [];
-  for (let index = 0; index < rows.length; index += rowsPerPage) {
-    pages.push(rows.slice(index, index + rowsPerPage));
-  }
+  let page: T[] = [];
+  let currentWeight = 0;
+
+  rows.forEach((row) => {
+    const weight = Math.max(1, Math.min(3, getWeight(row)));
+    if (page.length > 0 && currentWeight + weight > maxPageWeight) {
+      pages.push(page);
+      page = [];
+      currentWeight = 0;
+    }
+    page.push(row);
+    currentWeight += weight;
+  });
+
+  if (page.length > 0) pages.push(page);
   return pages;
 }
 
+function estimateDocumentLineWeight(item: ProjectItem) {
+  const label = formatDocumentWorkItemLabel(item);
+  const specification = formatDocumentSpecification(item);
+  let weight = 1;
+  if (label.length > 34 || specification.length > 22) weight += 1;
+  if (label.length > 70 || specification.length > 48) weight += 1;
+  return weight;
+}
+
 function paginateQuoteLines(lines: QuotePdfLine[]) {
-  return paginateRows(lines, documentRowsPerPage);
+  return paginateRowsByWeight(lines, (line) => estimateDocumentLineWeight(line.item), Math.min(documentRowsPerPage, 9));
 }
 
 function paginateInvoiceLines(lines: InvoicePdfLine[]) {
-  return paginateRows(lines, documentRowsPerPage);
+  return paginateRowsByWeight(lines, (line) => estimateDocumentLineWeight(line.item), Math.min(documentRowsPerPage, 9));
+}
+
+function resolveInvoiceBillingSummary(
+  input: Pick<Extract<PrintPreviewInput, { kind: "invoice" }>, "billingSummary" | "invoiceTotals" | "taxRate">,
+): InvoiceBillingSummary {
+  if (input.billingSummary) return input.billingSummary;
+  const previousInvoiceAmount = Math.round((input.invoiceTotals.previousBeforeTax ?? 0) * (1 + input.taxRate));
+  return {
+    previousInvoiceAmount,
+    paidAmount: 0,
+    carryOverAmount: previousInvoiceAmount,
+    currentInvoiceAmount: input.invoiceTotals.afterTax,
+  };
 }
 
 function getDocumentTitle(kind: PrintPreviewInput["kind"]) {
@@ -181,12 +217,13 @@ export async function exportAllDocumentsPdf(input: {
     if (!project) continue;
     const items = input.projectItems.filter((item) => item.projectId === project.id);
     const costSettings = getProjectCostSettings(input.costSettingsByProjectId, project.id);
+    const projectTaxRate = resolveProjectTaxRate(project.taxRateType, input.taxSettings.standardTaxRate);
     const sealSettings = getProjectSealSettings(input.sealSettingsByProjectId, project.id, input.companyInfo.sealImage);
     const totals = calculateEstimateTotals(
       items,
       costSettings.commonTemporaryRate,
       costSettings.siteManagementRate,
-      input.taxSettings.standardTaxRate,
+      projectTaxRate,
       input.taxSettings.taxRoundingMode,
       input.taxSettings.totalRoundingMode,
     );
@@ -216,6 +253,7 @@ export async function exportAllDocumentsPdf(input: {
       },
       lines,
       totals: documentTotals,
+      taxRate: projectTaxRate,
     };
     const pages = paginateQuoteLines(lines);
     for (const [pageIndex, pageLines] of pages.entries()) {
@@ -228,6 +266,7 @@ export async function exportAllDocumentsPdf(input: {
     const project = projectById.get(document.projectId);
     if (!project) continue;
     const items = input.projectItems.filter((item) => item.projectId === project.id);
+    const projectTaxRate = resolveProjectTaxRate(project.taxRateType, input.taxSettings.standardTaxRate);
     const sealSettings = getProjectSealSettings(input.sealSettingsByProjectId, project.id, input.companyInfo.sealImage);
     const baseInvoiceSettings = getProjectInvoiceSettings(input.invoiceSettingsByProjectId, project.id);
     const liveInvoiceLines = items.map((item) => {
@@ -247,7 +286,7 @@ export async function exportAllDocumentsPdf(input: {
       };
     });
     const invoiceLines = document.lineSnapshot?.length ? document.lineSnapshot : liveInvoiceLines;
-    const tax = roundCurrency(document.currentAmount * input.taxSettings.standardTaxRate, input.taxSettings.taxRoundingMode);
+    const tax = roundCurrency(document.currentAmount * projectTaxRate, input.taxSettings.taxRoundingMode);
     const invoiceTotals = document.totalsSnapshot ?? {
       previousBeforeTax: Math.max(0, document.cumulativeAmount - document.currentAmount),
       beforeTax: document.currentAmount,
@@ -255,6 +294,10 @@ export async function exportAllDocumentsPdf(input: {
       tax,
       afterTax: roundCurrency(document.currentAmount + tax, input.taxSettings.totalRoundingMode),
     };
+    const previousInvoiceAmount = Math.round((invoiceTotals.previousBeforeTax ?? 0) * (1 + projectTaxRate));
+    const paidAmount =
+      document.paidAmount ??
+      (document.paymentRecords ?? []).reduce((sum, record) => (record.deletedAt ? sum : sum + record.amount), 0);
     const invoiceInput = {
       kind: "invoice" as const,
       project,
@@ -267,11 +310,18 @@ export async function exportAllDocumentsPdf(input: {
         invoiceNumber: document.documentNumber,
         invoiceDate: document.invoiceDate,
         dueDate: document.dueDate,
+        bankAccountId: document.bankAccountId ?? baseInvoiceSettings.bankAccountId ?? null,
         remarks: sanitizeInvoicePublicText(document.remarks || baseInvoiceSettings.remarks),
       },
       invoiceLines,
       invoiceTotals,
-      taxRate: input.taxSettings.standardTaxRate,
+      billingSummary: {
+        previousInvoiceAmount,
+        paidAmount,
+        carryOverAmount: Math.max(0, previousInvoiceAmount - paidAmount),
+        currentInvoiceAmount: invoiceTotals.afterTax,
+      },
+      taxRate: projectTaxRate,
     };
     const pages = paginateInvoiceLines(invoiceLines);
     for (const [pageIndex, pageLines] of pages.entries()) {
@@ -297,6 +347,7 @@ async function drawQuotePdfPage(
   const { project, companyInfo, templateSettings, sealSettings, title, meta, lines, totals } = input;
   const navy = rgb(0.118, 0.227, 0.541);
   const emerald = rgb(0.063, 0.725, 0.506);
+  const totalInk = rgb(0.09, 0.16, 0.34);
   const slate = rgb(0.278, 0.333, 0.412);
   const light = rgb(0.89, 0.92, 0.96);
   const isLastPage = pageIndex === pageCount - 1;
@@ -304,6 +355,7 @@ async function drawQuotePdfPage(
   drawPdfText(page, `発行日 ${formatDate(meta.issuedAt ?? new Date().toISOString().slice(0, 10))}`, 52, 786, 8, font, slate);
   drawPdfText(page, `有効期限 ${formatDate(meta.expiresAt)}`, 52, 772, 8, font, slate);
   drawPdfText(page, `No. ${meta.documentNumber ?? project.id.toUpperCase()}`, 52, 758, 8, font, slate);
+  drawPdfText(page, `案件No. ${project.projectNumber || project.id.toUpperCase()}`, 52, 744, 8, font, slate);
   drawPdfCenteredText(page, title || "御見積書", 297.64, 762, 28, font, rgb(0.06, 0.09, 0.16));
   await drawPdfHeaderLogo(pdfDoc, page, companyInfo, sealSettings);
   drawPdfRightText(page, `${pageIndex + 1} / ${pageCount}ページ`, 543, 36, 8, font, slate);
@@ -316,14 +368,14 @@ async function drawQuotePdfPage(
   drawPdfCompanyInline(page, font, companyInfo, 543, 670);
   drawRule(page, 52, 606, 491, light);
 
-  page.drawRectangle({ x: 52, y: 546, width: 491, height: 48, color: rgb(1, 1, 1), opacity: 0.72, borderColor: rgb(0.86, 0.9, 0.95), borderWidth: 1 });
+  page.drawRectangle({ x: 52, y: 546, width: 491, height: 48, color: rgb(0.973, 0.98, 0.99), borderColor: rgb(0.86, 0.9, 0.95), borderWidth: 1 });
   drawPdfText(page, "工事名", 66, 577, 8, font, slate);
   drawWrappedText(page, project.constructionName, 66, 558, 430, 15, 18, font, navy, 2);
   drawPdfRightText(page, project.location, 529, 553, 8, font, slate);
 
-  page.drawRectangle({ x: 52, y: 492, width: 491, height: 42, color: navy });
-  drawPdfText(page, "御見積金額", 72, 507, 11, font, rgb(1, 1, 1));
-  drawPdfRightText(page, formatCurrency(meta.displayTotal ?? totals.afterTax), 523, 504, 22, font, rgb(1, 1, 1));
+  page.drawRectangle({ x: 52, y: 492, width: 491, height: 42, color: rgb(0.94, 0.97, 1), borderColor: rgb(0.69, 0.78, 0.93), borderWidth: 1 });
+  drawPdfText(page, "御見積合計額（税込）", 72, 507, 12, font, totalInk);
+  drawPdfRightText(page, formatCurrency(meta.displayTotal ?? totals.afterTax), 523, 504, 22, font, totalInk);
 
   drawTableHeader(page, font, ["工事項目", "品番・仕様", "数量", "単価", "金額"], [60, 250, 350, 430, 495], 461);
   let y = 439;
@@ -350,9 +402,9 @@ async function drawQuotePdfPage(
       ["労務費合計", totals.laborCost],
       ["法定福利費", totals.welfareCost],
       ["経費・管理費", totals.expenseCost + totals.commonTemporaryCost + totals.siteManagementCost],
-      ["税抜合計", totals.beforeTax],
-      ["消費税（10%）", totals.tax],
-      ["税込合計", totals.afterTax, true],
+      ["見積金額（税抜）", totals.beforeTax],
+      [formatConsumptionTaxLabel(input.taxRate), totals.tax],
+      ["御見積合計額（税込）", totals.afterTax, true],
     ], 330, 150);
   }
 }
@@ -369,6 +421,7 @@ async function drawInvoicePdfPage(
   const { project, companyInfo, templateSettings, sealSettings, invoiceSettings, invoiceLines, invoiceTotals, taxRate } = input;
   const navy = rgb(0.118, 0.227, 0.541);
   const emerald = rgb(0.063, 0.725, 0.506);
+  const totalInk = rgb(0.09, 0.16, 0.34);
   const slate = rgb(0.278, 0.333, 0.412);
   const light = rgb(0.89, 0.92, 0.96);
   const isLastPage = pageIndex === pageCount - 1;
@@ -376,6 +429,7 @@ async function drawInvoicePdfPage(
   drawPdfText(page, `請求番号 ${invoiceSettings.invoiceNumber}`, 52, 786, 8, font, navy);
   drawPdfText(page, `請求日 ${formatDate(invoiceSettings.invoiceDate)}`, 52, 772, 8, font, slate);
   drawPdfText(page, `支払期限 ${formatDate(invoiceSettings.dueDate)}`, 52, 758, 8, font, emerald);
+  drawPdfText(page, `案件No. ${project.projectNumber || project.id.toUpperCase()}`, 52, 744, 8, font, slate);
   drawPdfCenteredText(page, "御請求書", 297.64, 762, 28, font, rgb(0.06, 0.09, 0.16));
   await drawPdfHeaderLogo(pdfDoc, page, companyInfo, sealSettings);
   drawPdfRightText(page, `${pageIndex + 1} / ${pageCount}ページ`, 543, 36, 8, font, slate);
@@ -388,17 +442,38 @@ async function drawInvoicePdfPage(
   drawPdfCompanyInline(page, font, companyInfo, 543, 670);
   drawRule(page, 52, 606, 491, light);
 
-  page.drawRectangle({ x: 52, y: 546, width: 491, height: 48, color: rgb(1, 1, 1), opacity: 0.72, borderColor: rgb(0.86, 0.9, 0.95), borderWidth: 1 });
+  page.drawRectangle({ x: 52, y: 546, width: 491, height: 48, color: rgb(0.973, 0.98, 0.99), borderColor: rgb(0.86, 0.9, 0.95), borderWidth: 1 });
   drawPdfText(page, "工事名", 66, 577, 8, font, slate);
   drawWrappedText(page, project.constructionName, 66, 558, 430, 15, 18, font, navy, 2);
   drawPdfRightText(page, project.location, 529, 553, 8, font, slate);
 
-  page.drawRectangle({ x: 52, y: 492, width: 491, height: 42, color: navy });
-  drawPdfText(page, "今回御請求金額", 72, 507, 11, font, rgb(1, 1, 1));
-  drawPdfRightText(page, formatCurrency(invoiceTotals.afterTax), 523, 504, 22, font, rgb(1, 1, 1));
+  const billingSummary = resolveInvoiceBillingSummary(input);
+  [
+    ["前回請求額", billingSummary.previousInvoiceAmount],
+    ["御入金額", billingSummary.paidAmount],
+    ["繰越残高", billingSummary.carryOverAmount],
+    ["御請求合計額（税込）", billingSummary.currentInvoiceAmount],
+  ].forEach(([label, amount], index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const cellX = 52 + col * 247.5;
+    const cellY = 501 - row * 35;
+    const cellWidth = 238.5;
+    page.drawRectangle({
+      x: cellX,
+      y: cellY,
+      width: cellWidth,
+      height: 33,
+      color: rgb(0.94, 0.97, 1),
+      borderColor: rgb(0.75, 0.85, 0.98),
+      borderWidth: 1,
+    });
+    drawPdfText(page, label as string, cellX + 12, cellY + 20, index === 3 ? 10 : 9.2, font, totalInk);
+    drawPdfRightText(page, formatCurrency(amount as number), cellX + cellWidth - 12, cellY + 8, index === 3 ? 13.5 : 12, font, totalInk);
+  });
 
-  drawTableHeader(page, font, ["工事項目", "品番・仕様", "数量", "単価", "金額"], [60, 250, 350, 430, 495], 461);
-  let y = 439;
+  drawTableHeader(page, font, ["工事項目", "品番・仕様", "数量", "単価", "金額"], [60, 250, 350, 430, 495], 441);
+  let y = 419;
   invoiceLines.forEach((line) => {
     const rowHeight = 28;
     drawWrappedText(page, formatDocumentWorkItemLabel(line.item), 60, y, 180, 8, 9, font, rgb(0.06, 0.09, 0.16), 2);
@@ -411,7 +486,7 @@ async function drawInvoicePdfPage(
   });
 
   if (isLastPage) {
-    const primaryBank = companyInfo.bankAccounts[0];
+    const primaryBank = resolveInvoiceBankAccount(companyInfo, invoiceSettings.bankAccountId);
     drawBox(page, 52, 84, 255, 74);
     drawPdfText(page, "振込先", 66, 137, 9, font, rgb(0.2, 0.25, 0.33));
     drawWrappedText(
@@ -431,10 +506,9 @@ async function drawInvoicePdfPage(
     drawPdfText(page, "支払期限までに上記口座へお振込みください。", 66, 92, 7.5, font, emerald);
 
     drawTotals(page, font, [
-      ["今回税抜", invoiceTotals.beforeTax],
-      [`消費税（${Math.round(taxRate * 100)}%）`, invoiceTotals.tax],
-      ["今回税込", invoiceTotals.afterTax, true],
-      ["累計税抜", invoiceTotals.cumulativeBeforeTax],
+      ["請求金額（税抜）", invoiceTotals.beforeTax],
+      [formatConsumptionTaxLabel(taxRate), invoiceTotals.tax],
+      ["御請求合計額（税込）", invoiceTotals.afterTax, true],
     ], 330, 150);
     page.drawRectangle({ x: 52, y: 54, width: 491, height: 20, color: rgb(0.94, 0.99, 0.96), borderColor: rgb(0.73, 0.97, 0.82), borderWidth: 1 });
     drawPdfText(page, `消費税区分: 外税 / 適格請求書発行事業者登録番号 ${companyInfo.invoiceRegistrationNumber}`, 64, 61, 7.5, font, rgb(0.08, 0.4, 0.22));
@@ -450,7 +524,7 @@ async function drawWorkflowPdfPage(
   pageCount: number,
 ) {
   await drawPdfBase(pdfDoc, page, input.templateSettings.quoteBackgroundImage);
-  const { project, companyInfo, templateSettings, sealSettings, document, lines, totals } = input;
+  const { project, companyInfo, templateSettings, sealSettings, document, lines, totals, taxRate } = input;
   const navy = rgb(0.118, 0.227, 0.541);
   const emerald = rgb(0.063, 0.725, 0.506);
   const slate = rgb(0.278, 0.333, 0.412);
@@ -465,6 +539,7 @@ async function drawWorkflowPdfPage(
   drawPdfText(page, `発行日 ${formatDate(input.kind === "delivery" ? input.document.issuedAt : input.document.orderedAt)}`, 52, 786, 8, font, slate);
   drawPdfText(page, `${primaryLabel} ${formatDate(primaryDate)}`, 52, 772, 8, font, isDelivery ? slate : emerald);
   drawPdfText(page, `No. ${document.documentNumber}`, 52, 758, 8, font, slate);
+  drawPdfText(page, `案件No. ${project.projectNumber || project.id.toUpperCase()}`, 52, 744, 8, font, slate);
   drawPdfCenteredText(page, documentTitle, 297.64, 762, 28, font, rgb(0.06, 0.09, 0.16));
   await drawPdfHeaderLogo(pdfDoc, page, companyInfo, sealSettings);
   drawPdfRightText(page, `${pageIndex + 1} / ${pageCount}ページ`, 543, 36, 8, font, slate);
@@ -522,20 +597,19 @@ async function drawWorkflowPdfPage(
       ["法定福利費", totals.welfareCost],
       ["経費・管理費", totals.expenseCost + totals.commonTemporaryCost + totals.siteManagementCost],
       ["税抜合計", totals.beforeTax],
-      ["消費税（10%）", totals.tax],
+      [formatConsumptionTaxLabel(taxRate), totals.tax],
       ["税込合計", document.totalAmount || totals.afterTax, true],
     ], 330, 150);
   }
 }
 
 async function drawPdfBase(pdfDoc: PDFDocument, page: ReturnType<PDFDocument["addPage"]>, backgroundImage: string) {
-  page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(0.972, 0.98, 0.99) });
+  page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
   if (backgroundImage) {
     const image = await embedPdfImage(pdfDoc, backgroundImage);
     drawCoverImage(page, image, 0, 0, 595.28, 841.89);
   }
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1), opacity: backgroundImage ? 0.08 : 0 });
-  page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(0.94, 0.98, 0.97), opacity: 0.18 });
 }
 
 async function drawPdfLogo(
@@ -727,8 +801,7 @@ function drawBox(page: ReturnType<PDFDocument["addPage"]>, x: number, y: number,
     y,
     width,
     height,
-    color: rgb(1, 1, 1),
-    opacity: 0.76,
+    color: rgb(0.973, 0.98, 0.99),
     borderColor: rgb(0.89, 0.92, 0.96),
     borderWidth: 1,
   });
@@ -757,9 +830,10 @@ function drawTotals(
 ) {
   rows.forEach(([label, value, strong], index) => {
     const rowY = y - index * 18;
-    drawPdfText(page, label, x, rowY, strong ? 11 : 8.5, font, strong ? rgb(0.118, 0.227, 0.541) : rgb(0.278, 0.333, 0.412));
-    drawPdfRightText(page, formatCurrency(value), 543, rowY, strong ? 13 : 8.5, font, strong ? rgb(0.118, 0.227, 0.541) : rgb(0.278, 0.333, 0.412));
-    drawRule(page, x, rowY - 5, 213, strong ? rgb(0.118, 0.227, 0.541) : rgb(0.89, 0.92, 0.96));
+    const strongColor = rgb(0.09, 0.16, 0.34);
+    drawPdfText(page, label, x, rowY, strong ? 10.2 : 8.5, font, strong ? strongColor : rgb(0.278, 0.333, 0.412));
+    drawPdfRightText(page, formatCurrency(value), 532, rowY, strong ? 13.2 : 8.5, font, strong ? strongColor : rgb(0.278, 0.333, 0.412));
+    drawRule(page, x, rowY - 5, 202, strong ? strongColor : rgb(0.89, 0.92, 0.96));
   });
 }
 
@@ -815,6 +889,7 @@ function buildQuotePdfHtml({
   meta,
   lines,
   totals,
+  taxRate,
 }: {
   project: Project;
   recipientInfo?: DocumentRecipientInfo;
@@ -825,6 +900,7 @@ function buildQuotePdfHtml({
   meta: QuotePrintMeta;
   lines: QuotePdfLine[];
   totals: ReturnType<typeof calculateEstimateTotals>;
+  taxRate: number;
 }) {
   const issuedAt = meta.issuedAt ?? new Date().toISOString().slice(0, 10);
   const documentNumber = meta.documentNumber ?? project.id.toUpperCase();
@@ -854,6 +930,7 @@ function buildQuotePdfHtml({
           <p>発行日 <strong>${formatDate(issuedAt)}</strong></p>
           <p>有効期限 <strong>${escapeHtml(formatDate(meta.expiresAt))}</strong></p>
           <p>No. <strong>${escapeHtml(documentNumber)}</strong></p>
+          <p>案件No. <strong>${escapeHtml(project.projectNumber || project.id.toUpperCase())}</strong></p>
         </div>
         <h1>${escapeHtml(title || "御見積書")}</h1>
         <div class="logo-slot" aria-hidden="true">
@@ -876,7 +953,7 @@ function buildQuotePdfHtml({
       </section>
 
       <section class="amount-band">
-        <span>御見積金額</span>
+        <span>御見積合計額（税込）</span>
         <strong>${formatCurrency(displayTotal)}</strong>
       </section>
 
@@ -897,9 +974,9 @@ function buildQuotePdfHtml({
             ${buildPdfTotalRow("労務費合計", totals.laborCost)}
             ${buildPdfTotalRow("法定福利費", totals.welfareCost)}
             ${buildPdfTotalRow("経費・管理費", totals.expenseCost + totals.commonTemporaryCost + totals.siteManagementCost)}
-            ${buildPdfTotalRow("税抜合計", totals.beforeTax)}
-            ${buildPdfTotalRow("消費税（10%）", totals.tax)}
-            ${buildPdfTotalRow("税込合計", totals.afterTax, true)}
+            ${buildPdfTotalRow("見積金額（税抜）", totals.beforeTax)}
+            ${buildPdfTotalRow(formatConsumptionTaxLabel(taxRate), totals.tax)}
+            ${buildPdfTotalRow("御見積合計額（税込）", totals.afterTax, true)}
           </div>
         </section>
       ` : ""}
@@ -918,6 +995,7 @@ function buildInvoicePdfHtml({
   invoiceSettings,
   invoiceLines,
   invoiceTotals,
+  billingSummary,
   taxRate,
 }: {
   project: Project;
@@ -928,10 +1006,16 @@ function buildInvoicePdfHtml({
   invoiceSettings: ReturnType<typeof getProjectInvoiceSettings>;
   invoiceLines: InvoicePdfLine[];
   invoiceTotals: ReturnType<typeof calculateInvoiceTotals>;
+  billingSummary?: InvoiceBillingSummary;
   taxRate: number;
 }) {
-  const primaryBank = companyInfo.bankAccounts[0];
+  const primaryBank = resolveInvoiceBankAccount(companyInfo, invoiceSettings.bankAccountId);
   const pages = paginateInvoiceLines(invoiceLines);
+  const resolvedBillingSummary = resolveInvoiceBillingSummary({
+    billingSummary,
+    invoiceTotals,
+    taxRate,
+  });
 
   return pages.map((pageLines, pageIndex) => {
     const isLastPage = pageIndex === pages.length - 1;
@@ -956,6 +1040,7 @@ function buildInvoicePdfHtml({
           <p>請求番号 <strong>${escapeHtml(invoiceSettings.invoiceNumber)}</strong></p>
           <p>請求日 <strong>${escapeHtml(formatDate(invoiceSettings.invoiceDate))}</strong></p>
           <p>支払期限 <strong>${escapeHtml(formatDate(invoiceSettings.dueDate))}</strong></p>
+          <p>案件No. <strong>${escapeHtml(project.projectNumber || project.id.toUpperCase())}</strong></p>
         </div>
         <h1>御請求書</h1>
         <div class="logo-slot" aria-hidden="true">
@@ -977,9 +1062,11 @@ function buildInvoicePdfHtml({
         <p class="muted">${escapeHtml(project.location)}</p>
       </section>
 
-      <section class="amount-band">
-        <span>今回御請求金額</span>
-        <strong>${formatCurrency(invoiceTotals.afterTax)}</strong>
+      <section class="invoice-summary-band">
+        ${buildInvoiceBillingSummaryRow("前回請求額", resolvedBillingSummary.previousInvoiceAmount)}
+        ${buildInvoiceBillingSummaryRow("御入金額", resolvedBillingSummary.paidAmount)}
+        ${buildInvoiceBillingSummaryRow("繰越残高", resolvedBillingSummary.carryOverAmount)}
+        ${buildInvoiceBillingSummaryRow("御請求合計額（税込）", resolvedBillingSummary.currentInvoiceAmount, true)}
       </section>
 
       <table class="detail-table">
@@ -996,10 +1083,9 @@ function buildInvoicePdfHtml({
             <p class="bank-note">支払期限までに上記口座へお振込みください。</p>
           </div>
           <div class="totals">
-            ${buildPdfTotalRow("今回税抜", invoiceTotals.beforeTax)}
-            ${buildPdfTotalRow(`消費税（${Math.round(taxRate * 100)}%）`, invoiceTotals.tax)}
-            ${buildPdfTotalRow("今回税込", invoiceTotals.afterTax, true)}
-            ${buildPdfTotalRow("累計税抜", invoiceTotals.cumulativeBeforeTax)}
+            ${buildPdfTotalRow("請求金額（税抜）", invoiceTotals.beforeTax)}
+            ${buildPdfTotalRow(formatConsumptionTaxLabel(taxRate), invoiceTotals.tax)}
+            ${buildPdfTotalRow("御請求合計額（税込）", invoiceTotals.afterTax, true)}
           </div>
         </section>
 
@@ -1021,6 +1107,7 @@ function buildWorkflowPdfHtml({
   document,
   lines,
   totals,
+  taxRate,
   kind,
 }: Extract<PrintPreviewInput, { kind: "delivery" | "order" }>) {
   const isDelivery = kind === "delivery";
@@ -1054,6 +1141,7 @@ function buildWorkflowPdfHtml({
           <p>発行日 <strong>${escapeHtml(formatDate(issuedAt))}</strong></p>
           <p>${primaryLabel} <strong>${escapeHtml(formatDate(primaryDate))}</strong></p>
           <p>No. <strong>${escapeHtml(document.documentNumber)}</strong></p>
+          <p>案件No. <strong>${escapeHtml(project.projectNumber || project.id.toUpperCase())}</strong></p>
         </div>
         <h1>${documentTitle}</h1>
         <div class="logo-slot" aria-hidden="true">
@@ -1098,7 +1186,7 @@ function buildWorkflowPdfHtml({
             ${buildPdfTotalRow("法定福利費", totals.welfareCost)}
             ${buildPdfTotalRow("経費・管理費", totals.expenseCost + totals.commonTemporaryCost + totals.siteManagementCost)}
             ${buildPdfTotalRow("税抜合計", totals.beforeTax)}
-            ${buildPdfTotalRow("消費税（10%）", totals.tax)}
+            ${buildPdfTotalRow(formatConsumptionTaxLabel(taxRate), totals.tax)}
             ${buildPdfTotalRow("税込合計", document.totalAmount || totals.afterTax, true)}
           </div>
         </section>
@@ -1121,7 +1209,7 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
           height: 297mm;
           min-height: 297mm;
           overflow: hidden;
-          background: #f8fafc;
+          background: #ffffff;
           color: #0f172a;
           font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", Arial, sans-serif;
           padding: 15mm;
@@ -1129,7 +1217,7 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
         }
         .pdf-page + .pdf-page { margin-top: 24px; }
         .background { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-        .wash { position: absolute; inset: 0; background: radial-gradient(circle at 84% 11%, rgba(30,58,138,.10), transparent 24%), linear-gradient(135deg, rgba(16,185,129,.08), transparent 35%); }
+        .wash { position: absolute; inset: 0; background: transparent; }
         .content { position: relative; z-index: 2; min-height: 100%; padding-bottom: 28mm; }
         .seal,
         .logo-print { position: absolute; z-index: 3; object-fit: contain; }
@@ -1147,12 +1235,21 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
         .recipient-detail span { display: block; overflow-wrap: anywhere; word-break: break-word; }
         .company-inline { text-align: right; color: #475569; font-size: 10px; line-height: 1.62; }
         .company-inline strong { color: #0f172a; font-size: 11px; }
-        .project-band { margin-top: 18px; border: 1px solid #e2e8f0; border-radius: 12px; background: rgba(255,255,255,.78); padding: 13px 16px; }
+        .project-band { margin-top: 18px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; padding: 13px 16px; }
         .project-name { margin: 0; color: #1E3A8A; font-size: 24px; font-weight: 900; line-height: 1.25; }
         .muted { margin: 7px 0 0; color: #64748b; font-size: 12px; }
-        .amount-band { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; border-radius: 12px; background: #1E3A8A; color: white; padding: 15px 20px; }
-        .amount-band span { font-size: 14px; }
-        .amount-band strong { font-size: 27px; }
+        .amount-band { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; color: #172554; padding: 15px 20px; }
+        .amount-band span { flex-shrink: 0; color: #172554; font-size: 15px; font-weight: 900; line-height: 1; white-space: nowrap; }
+        .amount-band strong { color: #172554; font-size: 28px; font-weight: 900; line-height: 1; white-space: nowrap; }
+        .invoice-summary-band { margin-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-radius: 12px; color: #172554; }
+        .invoice-summary-row { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; padding: 9px 12px; }
+        .invoice-summary-row span,
+        .invoice-summary-row strong { color: #172554; }
+        .invoice-summary-row span { font-size: 12px; white-space: nowrap; }
+        .invoice-summary-row strong { font-size: 17px; font-weight: 900; white-space: nowrap; }
+        .invoice-summary-row.strong { border-color: #93c5fd; background: #dbeafe; }
+        .invoice-summary-row.strong span { font-size: 13px; font-weight: 900; line-height: 1; white-space: nowrap; }
+        .invoice-summary-row.strong strong { font-size: 20px; font-weight: 900; }
         .detail-table { width: 100%; margin-top: 18px; border-collapse: collapse; table-layout: fixed; font-size: 10.5px; }
         th { padding: 6px 7px; border-bottom: 2px solid #cbd5e1; color: #475569; text-align: left; font-weight: 800; }
         td { padding: 5px 7px; border-bottom: 1px solid #e2e8f0; vertical-align: top; line-height: 1.35; word-break: break-all; overflow-wrap: anywhere; white-space: normal; }
@@ -1163,13 +1260,16 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
         .right { text-align: right; white-space: nowrap; }
         .strong { font-weight: 800; color: #0f766e; }
         .empty { padding: 28px; text-align: center; color: #64748b; }
-        .bottom-grid { display: grid; grid-template-columns: 1fr 240px; gap: 22px; margin-top: 28px; margin-bottom: 12mm; align-items: start; }
-        .notes { border: 1px solid #e2e8f0; background: rgba(255,255,255,.82); border-radius: 10px; padding: 12px; color: #475569; font-size: 11px; line-height: 1.65; }
+        .bottom-grid { display: grid; grid-template-columns: 1fr 260px; gap: 22px; margin-top: 28px; margin-bottom: 12mm; align-items: start; }
+        .notes { border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 10px; padding: 12px; color: #475569; font-size: 11px; line-height: 1.65; }
         .box-title { margin: 0 0 6px; color: #334155; font-weight: 800; }
         .notes p { margin: 0; }
         .totals { font-size: 11px; }
-        .total-row { display: flex; justify-content: space-between; gap: 18px; padding: 6px 0; border-bottom: 1px solid #e2e8f0; color: #475569; }
-        .total-row.strong { color: #1E3A8A; font-size: 16px; font-weight: 900; border-bottom: 2px solid #1E3A8A; }
+        .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #e2e8f0; color: #334155; white-space: nowrap; }
+        .total-row span { flex: 0 0 auto; min-width: 0; white-space: nowrap; }
+        .total-row strong { flex: 0 0 auto; white-space: nowrap; }
+        .total-row.strong { color: #172554; font-size: 13px; font-weight: 900; line-height: 1.1; border-bottom: 2px solid #172554; }
+        .total-row.strong strong { font-size: 16px; font-weight: 900; line-height: 1; }
         .tax-box { margin-top: 12px; border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 9px; padding: 9px 12px; color: #166534; font-size: 10px; }
         .full-note { margin-top: 8px; max-height: none; overflow: visible; padding: 10px 12px; font-size: 9.5px; line-height: 1.45; }
         .full-note .note-text { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
@@ -1660,6 +1760,34 @@ function buildSealPlacementEditorWindowHtml({
         display: grid;
         gap: 14px;
       }
+      .control-section {
+        display: grid;
+        gap: 12px;
+        border: 1px solid rgba(255,255,255,.10);
+        border-radius: 16px;
+        background: rgba(255,255,255,.035);
+        padding: 14px;
+      }
+      .control-section + .control-section {
+        margin-top: 4px;
+      }
+      .control-section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 0;
+        color: #f8fafc;
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+      .control-section-note {
+        margin: -4px 0 2px;
+        color: #94a3b8;
+        font-size: 11px;
+        line-height: 1.55;
+      }
       .toggle-card,
       .select-card {
         border: 1px solid rgba(255,255,255,.12);
@@ -1842,28 +1970,36 @@ function buildSealPlacementEditorWindowHtml({
       <section class="preview-stage"><div class="preview-pages">${documentHtml}</div></section>
       <aside class="control-panel">
         <h1>${escapeHtml(documentTitle)}プレビュー</h1>
-        <p>A4の印刷イメージを見ながら、社判と会社ロゴの表示・位置・サイズを調整できます。プレビュー上で直接ドラッグできます。</p>
+        <p>A4の印刷イメージを見ながら、会社ロゴと社判の表示・位置・サイズを調整できます。プレビュー上で直接ドラッグできます。</p>
         <div class="control-group">
-          <div class="toggle-card">
-            <label class="toggle-row" for="enabled-checkbox">
-              <span>社判ON/OFF</span>
-              <input id="enabled-checkbox" type="checkbox" />
-            </label>
+          <div class="control-section">
+            <h2 class="control-section-title">ロゴ調整</h2>
+            <p class="control-section-note">右上の会社ロゴを調整します。</p>
+            <div class="toggle-card">
+              <label class="toggle-row" for="logo-enabled-checkbox">
+                <span>ロゴON/OFF</span>
+                <input id="logo-enabled-checkbox" type="checkbox" />
+              </label>
+            </div>
+            ${buildSealEditorControl("logoX", "ロゴ X座標", 0, 1000, "px")}
+            ${buildSealEditorControl("logoY", "ロゴ Y座標", 0, 1000, "px")}
+            ${buildSealEditorControl("logoScale", "ロゴ サイズ", 40, 180, "%")}
+            ${buildSealEditorControl("logoOpacity", "ロゴ 透明度", 0, 100, "%")}
           </div>
-          ${buildSealEditorControl("x", "社判 X座標", 0, 1000, "px")}
-          ${buildSealEditorControl("y", "社判 Y座標", 0, 1000, "px")}
-          ${buildSealEditorControl("scale", "社判 サイズ", 50, 150, "%")}
-          ${buildSealEditorControl("opacity", "社判 透明度", 0, 100, "%")}
-          <div class="toggle-card">
-            <label class="toggle-row" for="logo-enabled-checkbox">
-              <span>ロゴON/OFF</span>
-              <input id="logo-enabled-checkbox" type="checkbox" />
-            </label>
+          <div class="control-section">
+            <h2 class="control-section-title">社判調整</h2>
+            <p class="control-section-note">文書下部・押印欄付近の社判を調整します。</p>
+            <div class="toggle-card">
+              <label class="toggle-row" for="enabled-checkbox">
+                <span>社判ON/OFF</span>
+                <input id="enabled-checkbox" type="checkbox" />
+              </label>
+            </div>
+            ${buildSealEditorControl("x", "社判 X座標", 0, 1000, "px")}
+            ${buildSealEditorControl("y", "社判 Y座標", 0, 1000, "px")}
+            ${buildSealEditorControl("scale", "社判 サイズ", 50, 150, "%")}
+            ${buildSealEditorControl("opacity", "社判 透明度", 0, 100, "%")}
           </div>
-          ${buildSealEditorControl("logoX", "ロゴ X座標", 0, 1000, "px")}
-          ${buildSealEditorControl("logoY", "ロゴ Y座標", 0, 1000, "px")}
-          ${buildSealEditorControl("logoScale", "ロゴ サイズ", 40, 180, "%")}
-          ${buildSealEditorControl("logoOpacity", "ロゴ 透明度", 0, 100, "%")}
         </div>
         <div class="actions">
           <button id="mitru-export-pdf" type="button" onclick="exportPdfFromEditor()">PDF出力</button>
@@ -2198,6 +2334,10 @@ function buildPdfTotalRow(label: string, value: number, strong = false) {
   return `<div class="total-row ${strong ? "strong" : ""}"><span>${escapeHtml(label)}</span><strong>${formatCurrency(value)}</strong></div>`;
 }
 
+function buildInvoiceBillingSummaryRow(label: string, value: number, strong = false) {
+  return `<div class="invoice-summary-row ${strong ? "strong" : ""}"><span>${escapeHtml(label)}</span><strong>${formatCurrency(value)}</strong></div>`;
+}
+
 async function renderA4HtmlToPng(html: string) {
   const width = 794;
   const height = 1123;
@@ -2269,6 +2409,14 @@ function escapeHtml(value: string) {
 
 function escapeAttr(value: string) {
   return escapeHtml(value).replaceAll("\n", "");
+}
+
+function resolveInvoiceBankAccount(companyInfo: CompanyInfoState, bankAccountId?: string | null): BankAccount | undefined {
+  if (bankAccountId) {
+    const selected = companyInfo.bankAccounts.find((account) => account.id === bankAccountId);
+    if (selected) return selected;
+  }
+  return companyInfo.bankAccounts.find((account) => account.isDefault) ?? companyInfo.bankAccounts[0];
 }
 
 function sanitizeInvoicePublicText(value: string) {

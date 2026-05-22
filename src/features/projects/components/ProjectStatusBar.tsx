@@ -11,9 +11,15 @@ export function projectStatusClass(status: ProjectStatus, active = false) {
           ? "border-orange-300 bg-orange-100 text-orange-800 dark:border-orange-400/30 dark:bg-orange-400/[0.13] dark:text-orange-200"
           : status === "請求済み"
             ? "border-purple-300 bg-purple-100 text-purple-800 dark:border-purple-400/30 dark:bg-purple-400/[0.13] dark:text-purple-200"
-            : status === "完了"
-              ? "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/[0.12] dark:text-emerald-200"
-              : "border-slate-300 bg-slate-100 text-slate-800 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200";
+            : status === "請求締済"
+              ? "border-indigo-300 bg-indigo-100 text-indigo-800 dark:border-indigo-400/30 dark:bg-indigo-400/[0.13] dark:text-indigo-200"
+              : status === "完了"
+                ? "border-emerald-300 bg-emerald-100 text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/[0.12] dark:text-emerald-200"
+                : status === "失注"
+                  ? "border-red-300 bg-red-100 text-red-800 dark:border-red-400/30 dark:bg-red-400/[0.12] dark:text-red-200"
+                  : status === "破棄"
+                    ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-400/30 dark:bg-slate-400/[0.12] dark:text-slate-200"
+                    : "border-slate-300 bg-slate-100 text-slate-800 dark:border-white/10 dark:bg-white/[0.06] dark:text-slate-200";
 
   return active
     ? `${base} shadow-sm ring-2 ring-slate-400/20 dark:ring-white/20`

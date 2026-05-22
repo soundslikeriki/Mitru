@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { DatabaseBackup, FileDown, FileText, RotateCcw, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -21,7 +21,7 @@ import { projectStoreVersion } from "@/stores/slices/persist";
 
 export function DataExportSection() {
   const navigate = useNavigate();
-  const projects = useProjectStore((state) => state.projects);
+  const allProjects = useProjectStore((state) => state.projects);
   const projectItems = useProjectStore((state) => state.projectItems);
   const workItemMasters = useProjectStore((state) => state.workItemMasters);
   const materialMasters = useProjectStore((state) => state.materialMasters);
@@ -30,8 +30,8 @@ export function DataExportSection() {
   const invoiceSettingsByProjectId = useProjectStore((state) => state.invoiceSettingsByProjectId);
   const invoiceItemsByItemId = useProjectStore((state) => state.invoiceItemsByItemId);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
-  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
-  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
@@ -42,6 +42,15 @@ export function DataExportSection() {
   const [resetOpen, setResetOpen] = useState(false);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const notify = (title: string, description: string, tone: "success" | "error" = "success") => {
     setToast({ title, description, tone });
     window.setTimeout(() => setToast(null), 3600);

@@ -29,6 +29,15 @@ const isMac = platform === "darwin";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
+const updaterSigningKeyPath = path.join(projectRoot, "src-tauri", "updater", "mitru-updater.key");
+
+function updaterSigningEnv() {
+  if (!fs.existsSync(updaterSigningKeyPath)) return {};
+  return {
+    TAURI_SIGNING_PRIVATE_KEY: fs.readFileSync(updaterSigningKeyPath, "utf8"),
+    TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "",
+  };
+}
 
 console.log(`[tauri-build] script-version=${SCRIPT_VERSION} platform=${platform} node=${process.version}`);
 
@@ -56,11 +65,21 @@ function runTauri(tauriArgs) {
   const command = [quotedBin, ...tauriArgs].join(" ");
 
   console.log(`[tauri-build] 実行: ${command}`);
+  if (fs.existsSync(updaterSigningKeyPath)) {
+    console.log("[tauri-build] Updater署名キーを使用します。");
+  } else {
+    console.warn("[tauri-build] Updater署名キーが見つかりません。更新用アーティファクト生成に失敗する可能性があります。");
+    console.warn(`  期待パス: ${updaterSigningKeyPath}`);
+  }
 
   const result = spawnSync(command, {
     stdio: "inherit",
     shell: true,
     cwd: projectRoot,
+    env: {
+      ...process.env,
+      ...updaterSigningEnv(),
+    },
   });
 
   if (result.error) {
@@ -124,6 +143,10 @@ function buildWindows() {
       stdio: "inherit",
       shell: true,
       cwd: projectRoot,
+      env: {
+        ...process.env,
+        ...updaterSigningEnv(),
+      },
     });
     console.log("✅ Windowsビルドが完了しました！");
     return 0;

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { CalculationSummaryPanel } from "@/features/calculation/components/CalculationSummaryPanel";
 import { CalculationTable } from "@/features/calculation/components/CalculationTable";
+import { CalculationTemplateManager } from "@/features/calculation/components/CalculationTemplateManager";
 import { MasterSelectDialog } from "@/features/calculation/components/MasterSelectDialog";
 import { MaterialMasterPickerDialog } from "@/features/calculation/components/MaterialMasterPickerDialog";
 import { parseNumericInput } from "@/features/calculation/lib/formatting";
@@ -11,30 +12,34 @@ import {
   type MaterialMaster,
   type ProjectItem,
   type WorkItemMaster,
-  useProjectStore,
 } from "@/stores/project-store";
-import { getEstimatedUnitCost } from "@/features/calculation/lib/profit";
 
 export function CalculationTab({ projectId }: { projectId: string }) {
   const {
     items,
+    project,
     workItemMasters,
     materialMasters,
+    calculationTemplates,
     settings,
     totals,
     profitComparison,
     taxSettings,
+    projectTaxRate,
+    projectTaxRateType,
     addProjectItemFromMaster,
+    saveCalculationTemplate,
+    applyCalculationTemplate,
     updateProjectItem,
     deleteProjectItem,
     updateCostSettings,
+    updateProject,
   } = useProjectCalculation(projectId);
   const [masterPickerOpen, setMasterPickerOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [materialTargetItemId, setMaterialTargetItemId] = useState<string | null>(null);
   const [recentlySelectedItemId, setRecentlySelectedItemId] = useState<string | null>(null);
-  const createPurchaseOrderFromItem = useProjectStore((state) => state.createPurchaseOrderFromItem);
 
   const updateText = (id: string, field: keyof ProjectItem, value: string) => {
     updateProjectItem(id, { [field]: value } as Partial<ProjectItem>);
@@ -42,10 +47,18 @@ export function CalculationTab({ projectId }: { projectId: string }) {
 
   const updateNumber = (id: string, field: keyof ProjectItem, value: string) => {
     const numericValue = parseNumericInput(value);
+    const currentItem = items.find((item) => item.id === id);
     const input = { [field]: numericValue } as Partial<ProjectItem>;
     if (field === "estimatedLaborProductivity") input.laborProductivity = numericValue;
     if (field === "estimatedLaborUnitCost") input.laborUnitCost = numericValue;
     if (field === "estimatedUnitCost") input.materialUnitCost = numericValue;
+    if ((field === "baseCost" || field === "markupRate") && currentItem?.itemType === "material") {
+      const baseCost = field === "baseCost" ? numericValue : currentItem.baseCost ?? currentItem.materialUnitCost ?? 0;
+      const markupRate = field === "markupRate" ? numericValue : currentItem.markupRate ?? 1;
+      const estimatedUnitCost = baseCost > 0 && markupRate > 0 ? baseCost * markupRate : 0;
+      input.estimatedUnitCost = estimatedUnitCost;
+      input.materialUnitCost = estimatedUnitCost;
+    }
     updateProjectItem(id, input);
   };
 
@@ -69,6 +82,8 @@ export function CalculationTab({ projectId }: { projectId: string }) {
             estimatedLaborUnitCost: 0,
             actualLaborUnitCost: 0,
             welfareRate: 0,
+            baseCost: currentItem?.baseCost ?? currentItem?.materialUnitCost ?? null,
+            markupRate: currentItem?.markupRate ?? 1,
             expenseRate: 0,
           }
         : {
@@ -80,6 +95,8 @@ export function CalculationTab({ projectId }: { projectId: string }) {
             actualLaborUnitCost: laborUnitCost,
             welfareRate: taxSettings.defaultWelfareRate,
             materialUnitCost: 0,
+            baseCost: null,
+            markupRate: 1,
             estimatedUnitCost: 0,
             actualUnitCost: 0,
             actualMaterialCost: 0,
@@ -130,6 +147,8 @@ export function CalculationTab({ projectId }: { projectId: string }) {
       actualLaborUnitCost: master.standardLaborUnitCost,
       welfareRate: taxSettings.defaultWelfareRate,
       materialUnitCost: master.standardMaterialUnitCost,
+      baseCost: master.standardMaterialUnitCost || null,
+      markupRate: 1,
       estimatedUnitCost: master.standardMaterialUnitCost,
       actualUnitCost: master.standardMaterialUnitCost,
       actualMaterialCost: 0,
@@ -156,6 +175,8 @@ export function CalculationTab({ projectId }: { projectId: string }) {
       actualLaborUnitCost: 0,
       welfareRate: 0,
       materialUnitCost: material.materialUnitCost,
+      baseCost: material.materialUnitCost || null,
+      markupRate: 1,
       actualUnitCost: material.materialUnitCost,
       estimatedUnitCost: material.materialUnitCost,
       actualMaterialCost: 0,
@@ -166,24 +187,16 @@ export function CalculationTab({ projectId }: { projectId: string }) {
     setMaterialPickerOpen(false);
   };
 
-  const createOrderFromItem = (itemId: string) => {
-    const item = items.find((projectItem) => projectItem.id === itemId);
-    if (!item) return;
-    const supplierName = window.prompt("発注先を入力してください", "");
-    if (!supplierName) return;
-    const quantityInput = window.prompt("発注数量を入力してください", String(item.quantity || 1));
-    if (!quantityInput) return;
-    const unitPriceInput = window.prompt("発注単価を入力してください", String(getEstimatedUnitCost(item) || item.materialUnitCost || 0));
-    if (!unitPriceInput) return;
-    const dueDate = window.prompt("納期を入力してください（YYYY-MM-DD）", new Date().toISOString().slice(0, 10));
-    if (!dueDate) return;
-    createPurchaseOrderFromItem(projectId, itemId, {
-      supplierName,
-      quantity: parseNumericInput(quantityInput),
-      unitPrice: parseNumericInput(unitPriceInput),
-      dueDate,
-      remarks: item.specification,
-    });
+  const saveCurrentTemplate = (input: { name: string; customerId?: string | null }) => {
+    saveCalculationTemplate(projectId, input);
+  };
+
+  const applySavedTemplate = (templateId: string) => {
+    const createdItems = applyCalculationTemplate(projectId, templateId);
+    if (createdItems[0]) {
+      markRecentlySelected(createdItems[0].id);
+      focusCalculationRow(createdItems[0].id);
+    }
   };
 
   return (
@@ -193,25 +206,36 @@ export function CalculationTab({ projectId }: { projectId: string }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28 }}
     >
-      <CalculationTable
-        items={items}
-        recentlySelectedItemId={recentlySelectedItemId}
-        onAddItem={openMasterPickerForNewItem}
-        onTextChange={updateText}
-        onNumberChange={updateNumber}
-        onTypeChange={updateItemType}
-        onOpenMaster={openMasterPickerForItem}
-        onOpenMaterial={openMaterialPickerForItem}
-        onCreateOrder={createOrderFromItem}
-        onDelete={deleteProjectItem}
-      />
+      <div className="grid min-w-0 gap-4">
+        <CalculationTemplateManager
+          templates={calculationTemplates}
+          customerId={project?.customerId ?? null}
+          itemsCount={items.length}
+          onSave={saveCurrentTemplate}
+          onApply={applySavedTemplate}
+        />
+
+        <CalculationTable
+          items={items}
+          recentlySelectedItemId={recentlySelectedItemId}
+          onAddItem={openMasterPickerForNewItem}
+          onTextChange={updateText}
+          onNumberChange={updateNumber}
+          onTypeChange={updateItemType}
+          onOpenMaster={openMasterPickerForItem}
+          onOpenMaterial={openMaterialPickerForItem}
+          onDelete={deleteProjectItem}
+        />
+      </div>
 
       <CalculationSummaryPanel
         settings={settings}
         totals={totals}
         profitComparison={profitComparison}
-        taxSettings={taxSettings}
+        taxRate={projectTaxRate}
+        taxRateType={projectTaxRateType}
         onUpdateCostSettings={(input) => updateCostSettings(projectId, input)}
+        onUpdateTaxRateType={(taxRateType) => updateProject(projectId, { taxRateType })}
       />
 
       <MasterSelectDialog

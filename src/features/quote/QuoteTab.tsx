@@ -16,11 +16,13 @@ import {
   formatDate,
   formatDateForFile,
 } from "@/features/calculation/lib/formatting";
+import { resolveProjectTaxRate } from "@/lib/tax";
 import {
   DocumentCountBadge,
   DocumentHistoryRow,
   DocumentHistorySection,
 } from "@/features/documents/DocumentHistorySection";
+import { isDocumentSnapshotBehindCalculation } from "@/features/documents/document-staleness";
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
 import type { PrintPreviewInput, QuotePdfLine } from "@/features/documents/types";
 import { ToastMessage } from "@/features/shared/ToastMessage";
@@ -57,8 +59,8 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
   const settingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const quoteSettingsByProjectId = useProjectStore((state) => state.quoteSettingsByProjectId);
   const updateQuoteSettings = useProjectStore((state) => state.updateQuoteSettings);
-  const customers = useProjectStore((state) => state.customers);
-  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const allCustomers = useProjectStore((state) => state.customers);
+  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
   const createEstimateDocument = useProjectStore((state) => state.createEstimateDocument);
   const duplicateEstimateDocument = useProjectStore((state) => state.duplicateEstimateDocument);
   const updateEstimateDocument = useProjectStore((state) => state.updateEstimateDocument);
@@ -69,6 +71,11 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
   const projectEstimateDocuments = useMemo(
     () => estimateDocuments.filter((document) => document.projectId === project.id).sort((a, b) => b.version - a.version),
     [estimateDocuments, project.id],
@@ -80,11 +87,12 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
   const quoteSettings = getProjectQuoteSettings(quoteSettingsByProjectId, project.id);
   const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
+  const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const totals = calculateEstimateTotals(
     items,
     costSettings.commonTemporaryRate,
     costSettings.siteManagementRate,
-    taxSettings.standardTaxRate,
+    projectTaxRate,
     taxSettings.taxRoundingMode,
     taxSettings.totalRoundingMode,
   );
@@ -113,10 +121,24 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
       ? selectedEstimateDocument.lineSnapshot
       : quoteLines;
   const displayQuoteTotals = selectedEstimateDocument?.totalsSnapshot ?? totals;
+  const selectedEstimateSnapshotCreatedAt =
+    selectedEstimateDocument?.snapshotCreatedAt ||
+    selectedEstimateDocument?.updatedAt ||
+    selectedEstimateDocument?.createdAt ||
+    "";
+  const isEstimateSnapshotBehindCalculation = Boolean(
+    selectedEstimateDocument &&
+      isDocumentSnapshotBehindCalculation(
+        items,
+        selectedEstimateDocument.lineSnapshot,
+        selectedEstimateSnapshotCreatedAt,
+        latestCalculationUpdatedAt,
+      ),
+  );
   const isSelectedEstimateOutdated = Boolean(
     selectedEstimateDocument &&
       (Math.abs(selectedEstimateDocument.totalAmount - totals.afterTax) >= 1 ||
-        latestCalculationUpdatedAt > selectedEstimateDocument.updatedAt),
+        isEstimateSnapshotBehindCalculation),
   );
 
   useEffect(() => {
@@ -130,7 +152,7 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
   const previewQuoteTitle = selectedEstimateDocument?.title ?? quoteSettings.title;
   const previewQuoteExpiresAt = selectedEstimateDocument?.expiresAt ?? quoteSettings.expiresAt;
   const previewQuoteRemarks = selectedEstimateDocument?.remarks ?? quoteSettings.remarks;
-  const previewQuoteNumber = selectedEstimateDocument?.documentNumber ?? project.id.toUpperCase();
+  const previewQuoteNumber = selectedEstimateDocument?.documentNumber ?? project.projectNumber ?? project.id.toUpperCase();
   const previewQuoteIssuedAt = selectedEstimateDocument?.issuedAt ?? "2026-05-07";
   const previewQuoteTotal = selectedEstimateDocument?.totalAmount ?? totals.afterTax;
   const quotePrintInput: PrintPreviewInput = {
@@ -150,6 +172,7 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
     },
     lines: displayQuoteLines,
     totals: displayQuoteTotals,
+    taxRate: projectTaxRate,
   };
   const createCurrentEstimateDocument = () => {
     const version = Math.max(0, ...projectEstimateDocuments.map((document) => document.version)) + 1;

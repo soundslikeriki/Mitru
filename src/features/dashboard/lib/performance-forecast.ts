@@ -45,8 +45,8 @@ export function buildAnnualPerformanceForecast({
   const invoiceRevenueByProjectId = buildInvoiceRevenueByProjectId(invoiceDocuments);
 
   metrics.forEach((metric) => {
-    if (metric.project.status === "見積中") return;
-    const isCompleted = metric.project.status === "完了" || metric.project.status === "請求済み";
+    if (isForecastExcludedStatus(metric.project.status)) return;
+    const isCompleted = isRevenueRecognizedStatus(metric.project.status);
     const recognizedRevenue = isCompleted
       ? (invoiceRevenueByProjectId.get(metric.project.id) ?? 0)
       : metric.expectedRevenue;
@@ -59,7 +59,7 @@ export function buildAnnualPerformanceForecast({
   });
 
   const previousYearRevenue = metrics.reduce((sum, metric) => {
-    if (metric.project.status !== "完了" && metric.project.status !== "請求済み") return sum;
+    if (!isRevenueRecognizedStatus(metric.project.status)) return sum;
     const recognitionDate = parseDate(metric.project.expectedPaymentDate || metric.project.endDate || metric.project.updatedAt);
     if (recognitionDate?.getFullYear() !== year - 1) return sum;
     return sum + (invoiceRevenueByProjectId.get(metric.project.id) ?? 0);
@@ -88,6 +88,14 @@ export function buildAnnualPerformanceForecast({
     quarters: buildQuarterForecast(normalizedMonths),
     warning: predictedRevenue > 0 && predictedGrossProfit / predictedRevenue < 0.3,
   };
+}
+
+function isForecastExcludedStatus(status: ProjectProfitMetrics["project"]["status"]) {
+  return status === "見積中" || status === "失注" || status === "破棄";
+}
+
+function isRevenueRecognizedStatus(status: ProjectProfitMetrics["project"]["status"]) {
+  return status === "完了" || status === "請求済み" || status === "請求締済";
 }
 
 function buildInvoiceRevenueByProjectId(invoiceDocuments: InvoiceDocument[]) {

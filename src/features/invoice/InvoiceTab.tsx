@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { CheckCircle2, PlusCircle, Printer, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,11 +20,13 @@ import {
   formatNumber,
   parseNumericInput,
 } from "@/features/calculation/lib/formatting";
+import { resolveProjectTaxRate } from "@/lib/tax";
 import {
   DocumentCountBadge,
   DocumentHistoryRow,
   DocumentHistorySection,
 } from "@/features/documents/DocumentHistorySection";
+import { isDocumentSnapshotBehindCalculation } from "@/features/documents/document-staleness";
 import {
   buildDocumentRecipientInfo,
   formatDocumentSpecification,
@@ -39,6 +41,7 @@ import {
   getProjectSealSettings,
   type EstimateDocument,
   type InvoiceDocument,
+  type PaymentRecord,
   type PaymentMethod,
   type Project,
   type ProjectSealSettings,
@@ -73,16 +76,17 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const settingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const invoiceSettingsByProjectId = useProjectStore((state) => state.invoiceSettingsByProjectId);
   const invoiceItemsByItemId = useProjectStore((state) => state.invoiceItemsByItemId);
-  const customers = useProjectStore((state) => state.customers);
-  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const allCustomers = useProjectStore((state) => state.customers);
+  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
   const updateInvoiceItemStates = useProjectStore((state) => state.updateInvoiceItemStates);
   const updateInvoiceSettings = useProjectStore((state) => state.updateInvoiceSettings);
-  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const createInvoiceDocument = useProjectStore((state) => state.createInvoiceDocument);
   const duplicateInvoiceDocument = useProjectStore((state) => state.duplicateInvoiceDocument);
   const updateInvoiceDocument = useProjectStore((state) => state.updateInvoiceDocument);
   const updateInvoiceDocumentStatus = useProjectStore((state) => state.updateInvoiceDocumentStatus);
   const registerInvoicePayment = useProjectStore((state) => state.registerInvoicePayment);
+  const updateInvoicePayment = useProjectStore((state) => state.updateInvoicePayment);
   const deleteInvoicePayment = useProjectStore((state) => state.deleteInvoicePayment);
   const deleteInvoiceDocument = useProjectStore((state) => state.deleteInvoiceDocument);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
@@ -90,6 +94,16 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
+  const estimateDocuments = useMemo(
+    () => allEstimateDocuments.filter((document) => !document.deletedAt),
+    [allEstimateDocuments],
+  );
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const [selectedInvoiceDocumentId, setSelectedInvoiceDocumentId] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
@@ -100,6 +114,8 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const invoiceSettings = getProjectInvoiceSettings(invoiceSettingsByProjectId, project.id);
   const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
+  const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
+  const defaultBankAccount = companyInfo.bankAccounts.find((account) => account.isDefault) ?? companyInfo.bankAccounts[0] ?? null;
   const projectInvoiceDocuments = useMemo(
     () => invoiceDocuments.filter((document) => document.projectId === project.id).sort((a, b) => b.version - a.version),
     [invoiceDocuments, project.id],
@@ -133,7 +149,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   });
   const invoiceTotals = calculateInvoiceTotals(
     invoiceLines,
-    taxSettings.standardTaxRate,
+    projectTaxRate,
     taxSettings.taxRoundingMode,
     taxSettings.totalRoundingMode,
   );
@@ -168,11 +184,11 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const previousCustomerInvoiceAmount = useMemo(
     () => getPreviousCustomerInvoiceAmount({
       currentProject: project,
-      projects: allProjects,
+      projects,
       invoiceDocuments,
       selectedInvoiceDocument,
     }),
-    [allProjects, invoiceDocuments, project, selectedInvoiceDocument],
+    [invoiceDocuments, project, projects, selectedInvoiceDocument],
   );
   const previewInvoiceSettings = selectedInvoiceDocument
     ? {
@@ -180,21 +196,23 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
         invoiceNumber: selectedInvoiceDocument.documentNumber,
         invoiceDate: selectedInvoiceDocument.invoiceDate,
         dueDate: selectedInvoiceDocument.dueDate,
+        bankAccountId: selectedInvoiceDocument.bankAccountId ?? invoiceSettings.bankAccountId ?? defaultBankAccount?.id ?? null,
         remarks: sanitizeInvoicePublicText(selectedInvoiceDocument.remarks || invoiceSettings.remarks),
       }
     : {
         ...invoiceSettings,
         dueDate: project.expectedPaymentDate || invoiceSettings.dueDate,
+        bankAccountId: invoiceSettings.bankAccountId ?? defaultBankAccount?.id ?? null,
         remarks: sanitizeInvoicePublicText(invoiceSettings.remarks),
       };
   const previewInvoiceTotals = selectedInvoiceDocument
     ? {
         ...invoiceTotals,
         beforeTax: selectedInvoiceDocument.currentAmount,
-        tax: roundCurrency(selectedInvoiceDocument.currentAmount * taxSettings.standardTaxRate, taxSettings.taxRoundingMode),
+        tax: roundCurrency(selectedInvoiceDocument.currentAmount * projectTaxRate, taxSettings.taxRoundingMode),
         afterTax: roundCurrency(
           selectedInvoiceDocument.currentAmount +
-            roundCurrency(selectedInvoiceDocument.currentAmount * taxSettings.standardTaxRate, taxSettings.taxRoundingMode),
+            roundCurrency(selectedInvoiceDocument.currentAmount * projectTaxRate, taxSettings.taxRoundingMode),
           taxSettings.totalRoundingMode,
         ),
         cumulativeBeforeTax: selectedInvoiceDocument.cumulativeAmount,
@@ -205,11 +223,36 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
       ? selectedInvoiceDocument.lineSnapshot
       : invoiceLines;
   const displayInvoiceTotals = selectedInvoiceDocument?.totalsSnapshot ?? previewInvoiceTotals;
+  const previousInvoiceAmountWithTax = roundCurrency(
+    (displayInvoiceTotals.previousBeforeTax ?? previousCustomerInvoiceAmount) * (1 + projectTaxRate),
+    taxSettings.totalRoundingMode,
+  );
+  const invoiceBillingSummary = {
+    previousInvoiceAmount: previousInvoiceAmountWithTax,
+    paidAmount: selectedInvoicePaidAmount,
+    carryOverAmount: Math.max(0, previousInvoiceAmountWithTax - selectedInvoicePaidAmount),
+    currentInvoiceAmount: displayInvoiceTotals.afterTax,
+  };
+  const selectedInvoiceSnapshotCreatedAt =
+    selectedInvoiceDocument?.snapshotCreatedAt ||
+    selectedInvoiceDocument?.updatedAt ||
+    selectedInvoiceDocument?.createdAt ||
+    "";
+  const isInvoiceSnapshotBehindCalculation = Boolean(
+    selectedInvoiceDocument &&
+      isDocumentSnapshotBehindCalculation(
+        items,
+        selectedInvoiceDocument.lineSnapshot,
+        selectedInvoiceSnapshotCreatedAt,
+        latestCalculationUpdatedAt,
+      ),
+  );
   const isSelectedInvoiceOutdated = Boolean(
     selectedInvoiceDocument &&
       (Math.abs(selectedInvoiceDocument.currentAmount - invoiceTotals.beforeTax) >= 1 ||
-        latestCalculationUpdatedAt > selectedInvoiceDocument.updatedAt),
+        isInvoiceSnapshotBehindCalculation),
   );
+
   const invoicePrintInput: PrintPreviewInput = {
     kind: "invoice",
     project,
@@ -221,13 +264,14 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
     invoiceSettings: previewInvoiceSettings,
     invoiceLines: displayInvoiceLines,
     invoiceTotals: displayInvoiceTotals,
-    taxRate: taxSettings.standardTaxRate,
+    billingSummary: invoiceBillingSummary,
+    taxRate: projectTaxRate,
   };
   const createInvoiceFromEstimateDocument = (estimate: EstimateDocument) => {
     const version = Math.max(0, ...projectInvoiceDocuments.map((document) => document.version)) + 1;
     const currentBeforeTax =
       estimate.totalAmount > 0
-        ? roundCurrency(estimate.totalAmount / (1 + taxSettings.standardTaxRate), taxSettings.totalRoundingMode)
+        ? roundCurrency(estimate.totalAmount / (1 + projectTaxRate), taxSettings.totalRoundingMode)
         : invoiceTotals.beforeTax;
     const nextRate = contractBeforeTax > 0 ? Math.min(1, Math.max(0, currentBeforeTax / contractBeforeTax)) : 1;
     const cumulativeBeforeTax = previousCustomerInvoiceAmount + currentBeforeTax;
@@ -242,7 +286,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
         cumulativeAmount: invoiceLine.line.subtotal * nextRate,
       })),
     );
-    const tax = roundCurrency(currentBeforeTax * taxSettings.standardTaxRate, taxSettings.taxRoundingMode);
+    const tax = roundCurrency(currentBeforeTax * projectTaxRate, taxSettings.taxRoundingMode);
 
     try {
       const document = createInvoiceDocument(project.id, {
@@ -250,6 +294,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
         documentNumber: `INV-${formatDateForFile(new Date())}-${String(version).padStart(3, "0")}`,
         invoiceDate: new Date().toISOString().slice(0, 10),
         dueDate: project.expectedPaymentDate || invoiceSettings.dueDate,
+        bankAccountId: invoiceSettings.bankAccountId ?? defaultBankAccount?.id ?? null,
         currentAmount: currentBeforeTax,
         cumulativeAmount: cumulativeBeforeTax,
         progressRate: contractBeforeTax > 0 ? currentBeforeTax / contractBeforeTax : 1,
@@ -317,6 +362,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
     updateInvoiceDocument(selectedInvoiceDocument.id, {
       invoiceDate: invoiceSettings.invoiceDate,
       dueDate: project.expectedPaymentDate || invoiceSettings.dueDate,
+      bankAccountId: previewInvoiceSettings.bankAccountId ?? defaultBankAccount?.id ?? null,
       currentAmount: invoiceTotals.beforeTax,
       cumulativeAmount: cumulativeBeforeTax,
       progressRate: contractBeforeTax > 0 ? invoiceTotals.beforeTax / contractBeforeTax : 1,
@@ -336,7 +382,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
     });
     window.setTimeout(() => setToast(null), 3000);
   };
-  const updateInvoiceField = (input: Partial<Pick<InvoiceDocument, "documentNumber" | "invoiceDate" | "dueDate" | "remarks">>) => {
+  const updateInvoiceField = (input: Partial<Pick<InvoiceDocument, "documentNumber" | "invoiceDate" | "dueDate" | "remarks" | "bankAccountId">>) => {
     if (selectedInvoiceDocument) {
       updateInvoiceDocument(selectedInvoiceDocument.id, input);
       return;
@@ -347,6 +393,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
     if (input.invoiceDate !== undefined) settingsInput.invoiceDate = input.invoiceDate;
     if (input.dueDate !== undefined) settingsInput.dueDate = input.dueDate;
     if (input.remarks !== undefined) settingsInput.remarks = input.remarks;
+    if (input.bankAccountId !== undefined) settingsInput.bankAccountId = input.bankAccountId;
     updateInvoiceSettings(project.id, settingsInput);
   };
   const openInvoicePrintPreview = () => {
@@ -417,6 +464,40 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
     setToast({ title: "入金記録を削除しました", description: selectedInvoiceDocument.documentNumber });
     window.setTimeout(() => setToast(null), 3000);
   };
+  const editPaymentRecord = (record: PaymentRecord) => {
+    if (!selectedInvoiceDocument) return;
+    const amountInput = window.prompt("入金額を編集してください", String(record.amount));
+    if (amountInput === null) return;
+    const amount = parseNumericInput(amountInput);
+    if (amount <= 0) {
+      setToast({ title: "入金額を更新できません", description: "0円より大きい金額を入力してください。", tone: "error" });
+      window.setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    const paymentDateInput = window.prompt("入金日を編集してください（YYYY-MM-DD）", record.paymentDate);
+    if (paymentDateInput === null) return;
+    const paymentDateValue = paymentDateInput.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDateValue)) {
+      setToast({ title: "入金日を更新できません", description: "YYYY-MM-DD形式で入力してください。", tone: "error" });
+      window.setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    const methodInput = window.prompt("入金方法を編集してください（銀行振込 / 現金 / カード / その他）", record.paymentMethod);
+    if (methodInput === null) return;
+    const paymentMethodValue = paymentMethodOptions.includes(methodInput.trim() as PaymentMethod)
+      ? (methodInput.trim() as PaymentMethod)
+      : record.paymentMethod;
+    const noteInput = window.prompt("メモを編集してください", record.note);
+    if (noteInput === null) return;
+    updateInvoicePayment(selectedInvoiceDocument.id, record.id, {
+      amount,
+      paymentDate: paymentDateValue,
+      paymentMethod: paymentMethodValue,
+      note: noteInput,
+    });
+    setToast({ title: "入金記録を更新しました", description: `${formatCurrency(amount)} を反映しました。` });
+    window.setTimeout(() => setToast(null), 3000);
+  };
 
   return (
     <motion.section
@@ -436,8 +517,10 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
         </div>
 
         <InvoiceProgress
-          invoiceTotals={invoiceTotals}
-          previousInvoiceAmount={previousCustomerInvoiceAmount}
+          invoiceTotals={displayInvoiceTotals}
+          previousInvoiceAmount={invoiceBillingSummary.previousInvoiceAmount}
+          paidAmount={invoiceBillingSummary.paidAmount}
+          carryOverAmount={invoiceBillingSummary.carryOverAmount}
           contractBeforeTax={contractBeforeTax}
           onUpdateCurrentBillingAmount={updateCurrentBillingAmount}
         />
@@ -476,7 +559,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
               <td className="px-4 py-3 font-medium text-white">{document.documentNumber}</td>
               <td className="px-4 py-3 text-slate-300">
                 {document.sourceEstimateDocumentId ? (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/25 bg-emerald-400/[0.10] px-2 py-1 text-xs font-semibold text-emerald-300">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-1 text-xs font-semibold text-slate-900 shadow-sm dark:border-emerald-300/70 dark:bg-emerald-100 dark:text-slate-900">
                     <CheckCircle2 className="size-3" />
                     見積連携
                   </span>
@@ -575,9 +658,9 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
                 入金額が残債を超えています。過入金として登録する場合のみ続行してください。
               </p>
             )}
-            {(selectedInvoiceDocument.paymentRecords ?? []).length > 0 && (
+            {(selectedInvoiceDocument.paymentRecords ?? []).filter((record) => !record.deletedAt).length > 0 && (
               <div className="mt-4 grid gap-2">
-                {(selectedInvoiceDocument.paymentRecords ?? []).map((record) => (
+                {(selectedInvoiceDocument.paymentRecords ?? []).filter((record) => !record.deletedAt).map((record) => (
                   <div
                     key={record.id}
                     className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.035] px-3 py-2 text-xs text-slate-300 sm:grid-cols-[120px_1fr_100px_auto] sm:items-center"
@@ -585,9 +668,14 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
                     <span>{formatDate(record.paymentDate)}</span>
                     <span className="font-semibold text-white">{formatCurrency(record.amount)}</span>
                     <span>{record.paymentMethod}</span>
-                    <Button variant="ghost" size="sm" className="justify-self-end text-xs" onClick={() => deletePaymentRecord(record.id)}>
-                      削除
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="ghost" size="sm" className="text-xs" onClick={() => editPaymentRecord(record)}>
+                        編集
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-xs" onClick={() => deletePaymentRecord(record.id)}>
+                        削除
+                      </Button>
+                    </div>
                     {record.note && <span className="sm:col-span-4 text-slate-500">{record.note}</span>}
                   </div>
                 ))}
@@ -617,6 +705,22 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
               onChange={(event) => updateInvoiceField({ dueDate: event.target.value })}
             />
           </Field>
+          <Field label="振込先口座">
+            <select
+              value={previewInvoiceSettings.bankAccountId ?? ""}
+              onChange={(event) => updateInvoiceField({ bankAccountId: event.target.value || null })}
+              className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-emerald-400 dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
+            >
+              <option value="" className="bg-white text-slate-900 dark:bg-slate-950 dark:text-white">
+                口座未選択
+              </option>
+              {companyInfo.bankAccounts.map((account) => (
+                <option key={account.id} value={account.id} className="bg-white text-slate-900 dark:bg-slate-950 dark:text-white">
+                  {formatBankAccountOption(account)}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label="備考">
             <Input
               value={previewInvoiceSettings.remarks}
@@ -640,6 +744,11 @@ function PaymentMetric({ label, value, className = "text-white" }: { label: stri
       <p className={`mt-1 font-bold tabular-nums ${className}`}>{value}</p>
     </div>
   );
+}
+
+function formatBankAccountOption(account: { bankName: string; branchName: string; accountType: string; accountNumber: string; accountHolder: string; isDefault?: boolean }) {
+  const name = [account.bankName, account.branchName, account.accountType, account.accountNumber].filter(Boolean).join(" ");
+  return `${account.isDefault ? "既定: " : ""}${name || "名称未入力の口座"}${account.accountHolder ? `（${account.accountHolder}）` : ""}`;
 }
 
 function DocumentUpdateNotice({ onUpdate }: { onUpdate: () => void }) {

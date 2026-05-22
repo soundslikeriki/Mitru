@@ -1,6 +1,7 @@
 import type { SliceContext } from "./types";
 import type { MitruBackupData } from "./types";
 import {
+  defaultCloudSyncSettings,
   defaultDocumentNumberSettings,
   defaultTaxSettings,
   initialCompanyInfo,
@@ -30,6 +31,7 @@ export function createBackupSlice(
       customers: get().customers,
       projects: get().projects,
       projectItems: get().projectItems,
+      calculationTemplates: get().calculationTemplates,
       workItemMasters: get().workItemMasters,
       materialMasters: get().materialMasters,
       costSettingsByProjectId: get().costSettingsByProjectId,
@@ -45,6 +47,7 @@ export function createBackupSlice(
       companyInfo: get().companyInfo,
       pdfTemplateSettings: get().pdfTemplateSettings,
       taxSettings: get().taxSettings,
+      cloudSyncSettings: get().cloudSyncSettings,
       documentNumberSettings: get().documentNumberSettings,
     }),
     restoreBackupData: (data: MitruBackupData, mode: "overwrite" | "merge") => {
@@ -62,6 +65,7 @@ export function createBackupSlice(
           customers: source.customers ?? get().customers,
           projects: source.projects ?? [],
           projectItems: source.projectItems ?? [],
+          calculationTemplates: source.calculationTemplates ?? [],
           workItemMasters: source.workItemMasters ?? [],
           materialMasters: source.materialMasters ?? get().materialMasters,
           costSettingsByProjectId: source.costSettingsByProjectId ?? {},
@@ -77,6 +81,7 @@ export function createBackupSlice(
           companyInfo: source.companyInfo ?? get().companyInfo,
           pdfTemplateSettings: source.pdfTemplateSettings ?? get().pdfTemplateSettings,
           taxSettings: source.taxSettings ?? get().taxSettings,
+          cloudSyncSettings: source.cloudSyncSettings ?? get().cloudSyncSettings,
           documentNumberSettings: source.documentNumberSettings ?? get().documentNumberSettings,
         });
         return;
@@ -92,6 +97,7 @@ export function createBackupSlice(
         customers: mergeById(get().customers, source.customers ?? []),
         projects: mergeById(get().projects, source.projects ?? []),
         projectItems: mergeById(get().projectItems, source.projectItems ?? []),
+        calculationTemplates: mergeById(get().calculationTemplates, source.calculationTemplates ?? []),
         workItemMasters: mergeById(get().workItemMasters, source.workItemMasters ?? []),
         materialMasters: mergeById(get().materialMasters, source.materialMasters ?? []),
         costSettingsByProjectId: { ...get().costSettingsByProjectId, ...(source.costSettingsByProjectId ?? {}) },
@@ -107,6 +113,7 @@ export function createBackupSlice(
         companyInfo: source.companyInfo ?? get().companyInfo,
         pdfTemplateSettings: source.pdfTemplateSettings ?? get().pdfTemplateSettings,
         taxSettings: source.taxSettings ?? get().taxSettings,
+        cloudSyncSettings: source.cloudSyncSettings ?? get().cloudSyncSettings,
         documentNumberSettings: source.documentNumberSettings ?? get().documentNumberSettings,
       });
     },
@@ -115,6 +122,7 @@ export function createBackupSlice(
         customers: [],
         projects: [],
         projectItems: [],
+        calculationTemplates: [],
         costSettingsByProjectId: {},
         quoteSettingsByProjectId: {},
         invoiceSettingsByProjectId: {},
@@ -128,6 +136,7 @@ export function createBackupSlice(
         companyInfo: initialCompanyInfo,
         pdfTemplateSettings: initialPdfTemplateSettings,
         taxSettings: defaultTaxSettings,
+        cloudSyncSettings: defaultCloudSyncSettings,
         documentNumberSettings: defaultDocumentNumberSettings,
         lastBackupAt: new Date().toISOString(),
       });

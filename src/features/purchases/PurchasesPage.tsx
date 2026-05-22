@@ -12,7 +12,7 @@ import { useProjectStore } from "@/stores/project-store";
 const paymentMethodOptions: PaymentMethod[] = ["銀行振込", "現金", "カード", "その他"];
 
 export function PurchasesPage() {
-  const projects = useProjectStore((state) => state.projects);
+  const allProjects = useProjectStore((state) => state.projects);
   const orderDocuments = useProjectStore((state) => state.orderDocuments);
   const materialMasters = useProjectStore((state) => state.materialMasters);
   const registerOrderPurchase = useProjectStore((state) => state.registerOrderPurchase);
@@ -23,6 +23,7 @@ export function PurchasesPage() {
   const [note, setNote] = useState("");
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
   const summaries = useMemo(
     () => buildPurchaseOrderSummaries({ orders: orderDocuments, projects, materialMasters }),
     [materialMasters, orderDocuments, projects],

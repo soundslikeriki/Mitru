@@ -4,6 +4,7 @@ import {
   createBlankItem,
   createProjectItemFromMaster,
   createSampleItems,
+  defaultCloudSyncSettings,
   defaultCostSettings,
   defaultInvoiceSettings,
   defaultQuoteSettings,
@@ -26,6 +27,7 @@ import {
   now,
 } from "./defaults";
 import { createBackupSlice } from "./slices/backup-slice";
+import { createCloudSyncSlice } from "./slices/cloud-sync-slice";
 import { createCalculationSlice } from "./slices/calculation-slice";
 import { createCustomerSlice } from "./slices/customer-slice";
 import { createDeliverySlice, createInvoiceSlice, createOrderSlice, createQuoteSlice } from "./slices/document-slice";
@@ -45,6 +47,8 @@ export type {
   BankAccount,
   BillingCloseRecord,
   CompanyInfo,
+  CloudSyncSettings,
+  CloudSyncUser,
   Customer,
   CustomerInput,
   CustomerStatus,
@@ -59,6 +63,7 @@ export type {
   MaterialCategory,
   MaterialMaster,
   MaterialMasterInput,
+  CalculationTemplate,
   MitruBackupData,
   NewProjectInput,
   OrderDocument,
@@ -78,6 +83,9 @@ export type {
   ProjectSealSettings,
   ProjectStatus,
   ProjectStore,
+  ProjectSyncSummary,
+  ProjectTaxRateType,
+  SyncMetadata,
   TaxDisplayMode,
   TaxRoundingMode,
   TaxSettings,
@@ -100,6 +108,7 @@ export const useProjectStore = create<ProjectStore>()(
       customers: initialCustomers,
       projects: initialProjects,
       projectItems: initialProjectItems,
+      calculationTemplates: [],
       workItemMasters: initialWorkItemMasters,
       materialMasters: initialMaterialMasters,
       costSettingsByProjectId: {},
@@ -119,6 +128,7 @@ export const useProjectStore = create<ProjectStore>()(
       companyInfo: initialCompanyInfo,
       pdfTemplateSettings: initialPdfTemplateSettings,
       taxSettings: defaultTaxSettings,
+      cloudSyncSettings: defaultCloudSyncSettings,
       documentNumberSettings: defaultDocumentNumberSettings,
       lastBackupAt: "",
       ...createCustomerSlice({ set, get, now }),
@@ -156,6 +166,7 @@ export const useProjectStore = create<ProjectStore>()(
       ...createOrderSlice({ set, get, now }),
       ...createMasterSlice({ set, get, now }),
       ...createSettingsSlice({ set, get, now }),
+      ...createCloudSyncSlice({ set, get, now }),
       ...createBackupSlice(
         { set, get, now },
         {

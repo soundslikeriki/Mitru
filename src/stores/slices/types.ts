@@ -1,7 +1,18 @@
-export type ProjectStatus = "見積中" | "契約済" | "施工中" | "完了" | "請求済み";
+export type ProjectStatus = "見積中" | "契約済" | "施工中" | "完了" | "請求済み" | "請求締済" | "失注" | "破棄";
+export type ProjectTaxRateType = "standard" | "reduced" | "exempt";
+
+export type SyncMetadata = {
+  lastSyncedAt: string | null;
+  serverId: string | null;
+  version: number;
+  syncedBy: string | null;
+};
 
 export type Project = {
   id: string;
+  projectNumber: string;
+  ownerId: string;
+  assignedTo: string | null;
   customerId?: string;
   name: string;
   clientName: string;
@@ -15,14 +26,19 @@ export type Project = {
   processMemo?: string;
   ownerMemo?: string;
   status: ProjectStatus;
+  taxRateType: ProjectTaxRateType;
   totalAmount: number;
   progress: number;
   note: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
+  syncMetadata?: SyncMetadata;
 };
 
 export type NewProjectInput = {
+  projectNumber?: string;
+  assignedTo?: string | null;
   customerId?: string;
   name: string;
   clientName: string;
@@ -35,6 +51,7 @@ export type NewProjectInput = {
   nextActionDate?: string;
   processMemo?: string;
   ownerMemo?: string;
+  taxRateType?: ProjectTaxRateType;
   note: string;
 };
 
@@ -59,6 +76,8 @@ export type Customer = {
   businessCards: string[];
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
+  syncMetadata?: SyncMetadata;
 };
 
 export type CustomerInput = Omit<Customer, "id" | "createdAt" | "updatedAt">;
@@ -82,6 +101,8 @@ export type ProjectItem = {
   estimatedLaborUnitCost?: number;
   actualLaborUnitCost?: number;
   materialUnitCost: number;
+  baseCost?: number | null;
+  markupRate?: number | null;
   estimatedUnitCost?: number;
   actualUnitCost?: number;
   actualMaterialCost?: number;
@@ -91,9 +112,19 @@ export type ProjectItem = {
   note: string;
   createdAt: string;
   updatedAt: string;
+  syncMetadata?: SyncMetadata;
 };
 
 export type ProjectItemTemplateInput = Omit<ProjectItem, "id" | "projectId" | "createdAt" | "updatedAt">;
+
+export type CalculationTemplate = {
+  id: string;
+  name: string;
+  customerId?: string | null;
+  items: ProjectItemTemplateInput[];
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type ProjectCostSettings = {
   commonTemporaryRate: number;
@@ -113,6 +144,100 @@ export type TaxSettings = {
   taxRoundingMode: TaxRoundingMode;
   totalRoundingMode: TaxRoundingMode;
   updatedAt: string;
+};
+
+export type CloudSyncSettings = {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  isEnabled: boolean;
+  isTestMode: boolean;
+  isConnected: boolean;
+  lastSyncAt: string;
+  lastProjectsSyncedAt: string;
+  lastCustomersSyncedAt: string;
+  lastEstimatesSyncedAt: string;
+  lastInvoicesSyncedAt: string;
+  lastPaymentsSyncedAt: string;
+  lastProjectsSyncCursorId: string;
+  lastCustomersSyncCursorId: string;
+  lastEstimatesSyncCursorId: string;
+  lastInvoicesSyncCursorId: string;
+  lastPaymentsSyncCursorId: string;
+  syncStatus: CloudSyncStatus;
+  syncProgress: CloudSyncProgress;
+  lastSyncResults: CloudSyncResults;
+  syncHistory: CloudSyncHistoryEntry[];
+  pendingConflicts: CloudSyncConflict[];
+  authState: "idle" | "authenticating" | "authenticated" | "error";
+  user: CloudSyncUser | null;
+};
+
+export type CloudSyncStatus = "idle" | "syncing" | "success" | "error";
+
+export type CloudSyncProgress = {
+  isSyncing: boolean;
+  currentStep: number;
+  totalSteps: number;
+  label: string;
+  startedAt: string | null;
+};
+
+export type CloudSyncEntityResult = {
+  status: "idle" | "success" | "error" | "skipped";
+  pulled: number;
+  pushed: number;
+  skipped: number;
+  message: string;
+  syncedAt: string | null;
+  syncCursorId?: string | null;
+};
+
+export type CloudSyncResults = {
+  projects: CloudSyncEntityResult;
+  customers: CloudSyncEntityResult;
+  estimates: CloudSyncEntityResult;
+  invoices: CloudSyncEntityResult;
+  payments: CloudSyncEntityResult;
+};
+
+export type CloudSyncHistoryEntry = {
+  id: string;
+  ranAt: string;
+  status: "success" | "partial" | "error";
+  succeeded: number;
+  failed: number;
+  message: string;
+};
+
+export type CloudSyncEntityType = "projects" | "customers" | "estimates" | "invoices" | "payments";
+
+export type CloudSyncConflict = {
+  id: string;
+  entityType: CloudSyncEntityType;
+  entityLabel: string;
+  entityId: string;
+  title: string;
+  localUpdatedAt: string;
+  cloudUpdatedAt: string;
+  detectedAt: string;
+  localRecord: unknown;
+  cloudRecord: unknown;
+};
+
+export type CloudSyncConflictResolution = "local" | "cloud";
+
+export type CloudSyncUser = {
+  id: string;
+  email: string;
+  name: string;
+};
+
+export type ProjectSyncSummary = {
+  pulled: number;
+  pushed: number;
+  skipped: number;
+  syncedAt: string;
+  syncCursorId?: string | null;
 };
 
 export type DocumentNumberConfig = {
@@ -139,6 +264,7 @@ export type ProjectInvoiceSettings = {
   invoiceDate: string;
   dueDate: string;
   remarks: string;
+  bankAccountId?: string | null;
 };
 
 export type ProjectInvoiceItemState = {
@@ -205,6 +331,9 @@ export type PaymentRecord = {
   paymentMethod: PaymentMethod;
   note: string;
   createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+  syncMetadata?: SyncMetadata;
 };
 
 export type PurchaseRecord = {
@@ -215,6 +344,7 @@ export type PurchaseRecord = {
   paymentMethod: PaymentMethod;
   note: string;
   createdAt: string;
+  syncMetadata?: SyncMetadata;
 };
 
 export type OrderLineSnapshot = {
@@ -239,6 +369,7 @@ export type BillingCloseRecord = {
   totalAmount: number;
   status: "作成済";
   createdAt: string;
+  syncMetadata?: SyncMetadata;
 };
 
 export type EstimateDocument = {
@@ -257,6 +388,8 @@ export type EstimateDocument = {
   snapshotCreatedAt?: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
+  syncMetadata?: SyncMetadata;
 };
 
 export type InvoiceDocument = {
@@ -266,6 +399,7 @@ export type InvoiceDocument = {
   documentNumber: string;
   invoiceDate: string;
   dueDate: string;
+  bankAccountId?: string | null;
   currentAmount: number;
   cumulativeAmount: number;
   progressRate: number;
@@ -279,6 +413,8 @@ export type InvoiceDocument = {
   snapshotCreatedAt?: string;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
+  syncMetadata?: SyncMetadata;
 };
 
 export type DeliveryDocumentStatus = "未発行" | "発行済" | "納品済";
@@ -300,6 +436,7 @@ export type DeliveryDocument = {
   remarks: string;
   createdAt: string;
   updatedAt: string;
+  syncMetadata?: SyncMetadata;
 };
 
 export type OrderDocument = {
@@ -321,6 +458,7 @@ export type OrderDocument = {
   remarks: string;
   createdAt: string;
   updatedAt: string;
+  syncMetadata?: SyncMetadata;
 };
 
 export type WorkItemMaster = {
@@ -337,6 +475,7 @@ export type WorkItemMaster = {
   note: string;
   createdAt: string;
   updatedAt: string;
+  syncMetadata?: SyncMetadata;
 };
 
 export type WorkItemMasterInput = Omit<WorkItemMaster, "id" | "favorite" | "createdAt" | "updatedAt"> & {
@@ -358,6 +497,7 @@ export type MaterialMaster = {
   note: string;
   createdAt: string;
   updatedAt: string;
+  syncMetadata?: SyncMetadata;
 };
 
 export type MaterialMasterInput = Omit<MaterialMaster, "id" | "favorite" | "createdAt" | "updatedAt"> & {
@@ -371,6 +511,7 @@ export type BankAccount = {
   accountType: string;
   accountNumber: string;
   accountHolder: string;
+  isDefault: boolean;
 };
 
 export type CompanyInfo = {
@@ -423,6 +564,7 @@ export type MitruBackupData = {
   customers: Customer[];
   projects: Project[];
   projectItems: ProjectItem[];
+  calculationTemplates: CalculationTemplate[];
   workItemMasters: WorkItemMaster[];
   materialMasters: MaterialMaster[];
   costSettingsByProjectId: Record<string, ProjectCostSettings>;
@@ -438,6 +580,7 @@ export type MitruBackupData = {
   companyInfo: CompanyInfo;
   pdfTemplateSettings: PdfTemplateSettings;
   taxSettings: TaxSettings;
+  cloudSyncSettings: CloudSyncSettings;
   documentNumberSettings: DocumentNumberSettings;
 };
 
@@ -445,6 +588,7 @@ export type ProjectStore = {
   customers: Customer[];
   projects: Project[];
   projectItems: ProjectItem[];
+  calculationTemplates: CalculationTemplate[];
   workItemMasters: WorkItemMaster[];
   materialMasters: MaterialMaster[];
   costSettingsByProjectId: Record<string, ProjectCostSettings>;
@@ -460,16 +604,19 @@ export type ProjectStore = {
   companyInfo: CompanyInfo;
   pdfTemplateSettings: PdfTemplateSettings;
   taxSettings: TaxSettings;
+  cloudSyncSettings: CloudSyncSettings;
   documentNumberSettings: DocumentNumberSettings;
   createCustomer: (input: CustomerInput) => Customer;
   updateCustomer: (id: string, input: Partial<CustomerInput>) => void;
   deleteCustomer: (id: string) => void;
   createProject: (input: NewProjectInput) => Project;
-  updateProject: (id: string, input: Partial<Omit<Project, "id" | "createdAt">>) => void;
+  updateProject: (id: string, input: Partial<Omit<Project, "id" | "ownerId" | "createdAt">>) => void;
   deleteProject: (id: string) => void;
   addProjectItem: (projectId: string) => void;
   addProjectItemFromMaster: (projectId: string, masterId: string) => ProjectItem | undefined;
   addProjectItemFromTemplate: (projectId: string, template: ProjectItemTemplateInput) => ProjectItem;
+  saveCalculationTemplate: (projectId: string, input: { name: string; customerId?: string | null }) => CalculationTemplate;
+  applyCalculationTemplate: (projectId: string, templateId: string) => ProjectItem[];
   importSampleItems: (projectId: string) => void;
   updateProjectItemPricesFromMasters: (projectId: string) => number;
   updateProjectItem: (id: string, input: Partial<Omit<ProjectItem, "id" | "projectId" | "createdAt">>) => void;
@@ -491,8 +638,13 @@ export type ProjectStore = {
   updateInvoiceDocumentStatus: (documentId: string, status: InvoiceDocument["status"]) => void;
   registerInvoicePayment: (
     invoiceId: string,
-    input: Omit<PaymentRecord, "id" | "invoiceId" | "createdAt">,
+    input: Omit<PaymentRecord, "id" | "invoiceId" | "createdAt" | "updatedAt">,
   ) => PaymentRecord | undefined;
+  updateInvoicePayment: (
+    invoiceId: string,
+    paymentId: string,
+    input: Partial<Omit<PaymentRecord, "id" | "invoiceId" | "createdAt" | "updatedAt" | "syncMetadata" | "deletedAt">>,
+  ) => void;
   deleteInvoicePayment: (invoiceId: string, paymentId: string) => void;
   deleteInvoiceDocument: (documentId: string) => void;
   createBillingCloseRun: (input: { closingDate: string; estimateIds: string[] }) => BillingCloseRecord[];
@@ -531,9 +683,19 @@ export type ProjectStore = {
   updateCompanyInfo: (input: Partial<CompanyInfo>) => void;
   addBankAccount: () => void;
   updateBankAccount: (id: string, input: Partial<BankAccount>) => void;
+  setDefaultBankAccount: (id: string) => void;
   deleteBankAccount: (id: string) => void;
   updatePdfTemplateSettings: (input: Partial<PdfTemplateSettings>) => void;
   updateTaxSettings: (input: Partial<Omit<TaxSettings, "updatedAt">>) => void;
+  updateCloudSyncSettings: (input: Partial<CloudSyncSettings>) => void;
+  syncProjects: () => Promise<ProjectSyncSummary>;
+  syncCustomers: () => Promise<ProjectSyncSummary>;
+  syncEstimates: () => Promise<ProjectSyncSummary>;
+  syncInvoices: () => Promise<ProjectSyncSummary>;
+  syncPayments: () => Promise<ProjectSyncSummary>;
+  syncAll: () => Promise<CloudSyncResults>;
+  resolveCloudSyncConflict: (conflictId: string, resolution: CloudSyncConflictResolution) => void;
+  resolveAllCloudSyncConflicts: (resolution: CloudSyncConflictResolution) => void;
   updateDocumentNumberSettings: (input: Partial<{
     estimate: Partial<DocumentNumberConfig>;
     invoice: Partial<DocumentNumberConfig>;

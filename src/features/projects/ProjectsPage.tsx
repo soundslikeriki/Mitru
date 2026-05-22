@@ -11,6 +11,7 @@ import { CustomerCreateDialog } from "@/features/customers/CustomersPage";
 import { formatProfitRate } from "@/features/calculation/lib/profit";
 import { projectStatusClass } from "@/features/projects/components/ProjectStatusBar";
 import { ToastMessage } from "@/features/shared/ToastMessage";
+import { getProjectUserLabel } from "@/features/projects/lib/project-utils";
 import {
   buildProjectProfitMetrics,
   projectProfitTextClass,
@@ -19,11 +20,21 @@ import {
 } from "@/features/projects/lib/profit-dashboard";
 import { type Customer, type NewProjectInput, type Project, type ProjectStatus, useProjectStore } from "@/stores/project-store";
 
-const statusOptions: Array<ProjectStatus | "すべて"> = ["すべて", "見積中", "契約済", "施工中", "完了", "請求済み"];
+const statusOptions: Array<ProjectStatus | "すべて"> = [
+  "すべて",
+  "見積中",
+  "契約済",
+  "施工中",
+  "完了",
+  "請求済み",
+  "請求締済",
+  "失注",
+  "破棄",
+];
 const requiredFieldsMessage = "未入力の情報があります。すべての必須項目を入力してください。";
 const listDeleteButtonClass =
   "text-slate-500 hover:border-red-300/50 hover:bg-red-500/10 hover:text-red-500 dark:text-slate-400 dark:hover:border-red-400/30 dark:hover:bg-red-500/10 dark:hover:text-red-300";
-type ProjectSortMode = "updated" | "margin-desc" | "risk";
+type ProjectSortMode = "updated" | "project-number" | "margin-desc" | "risk";
 
 type ProjectsPageProps = {
   createOpen?: boolean;
@@ -31,11 +42,12 @@ type ProjectsPageProps = {
 
 export function ProjectsPage({ createOpen = false }: ProjectsPageProps) {
   const navigate = useNavigate();
-  const projects = useProjectStore((state) => state.projects);
+  const allProjects = useProjectStore((state) => state.projects);
   const projectItems = useProjectStore((state) => state.projectItems);
   const [status, setStatus] = useState<ProjectStatus | "すべて">("すべて");
   const [riskOnly, setRiskOnly] = useState(false);
   const [sortMode, setSortMode] = useState<ProjectSortMode>("updated");
+  const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
 
   const filteredProjects = useMemo(() => {
     return buildProjectProfitMetrics(projects, projectItems)
@@ -47,6 +59,7 @@ export function ProjectsPage({ createOpen = false }: ProjectsPageProps) {
         return matchesStatus && matchesRisk;
       })
       .sort((a, b) => {
+        if (sortMode === "project-number") return compareProjectNumbers(a.project.projectNumber, b.project.projectNumber);
         if (sortMode === "margin-desc") return b.actualGrossMarginRate - a.actualGrossMarginRate;
         if (sortMode === "risk") return riskRank(b) - riskRank(a);
         return Date.parse(b.project.updatedAt) - Date.parse(a.project.updatedAt);
@@ -84,6 +97,7 @@ export function ProjectsPage({ createOpen = false }: ProjectsPageProps) {
             aria-label="並び替え"
           >
             <option value="updated" className="bg-slate-950 text-white">更新日順</option>
+            <option value="project-number" className="bg-slate-950 text-white">案件No順</option>
             <option value="margin-desc" className="bg-slate-950 text-white">粗利率が高い順</option>
             <option value="risk" className="bg-slate-950 text-white">危険度順</option>
           </select>
@@ -92,7 +106,7 @@ export function ProjectsPage({ createOpen = false }: ProjectsPageProps) {
             onClick={() => setRiskOnly((current) => !current)}
             className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${
               riskOnly
-                ? "border-red-400/35 bg-red-400/[0.14] text-red-200"
+                ? "border-red-300 bg-red-100 text-red-800 shadow-sm shadow-red-950/5 ring-1 ring-red-300/40 hover:bg-red-200 dark:border-red-400/40 dark:bg-red-400/[0.16] dark:text-red-100 dark:ring-red-400/25 dark:hover:bg-red-400/[0.22]"
                 : "border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white"
             }`}
           >
@@ -133,6 +147,7 @@ function ProjectsDataTable({ projects }: { projects: ProjectProfitMetrics[] }) {
   const navigate = useNavigate();
   const updateProject = useProjectStore((state) => state.updateProject);
   const deleteProject = useProjectStore((state) => state.deleteProject);
+  const cloudUser = useProjectStore((state) => state.cloudSyncSettings.user);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
@@ -151,25 +166,34 @@ function ProjectsDataTable({ projects }: { projects: ProjectProfitMetrics[] }) {
   const columns = useMemo<ColumnDef<ProjectProfitMetrics>[]>(
     () => [
       {
+        accessorKey: "project.projectNumber",
+        header: "案件No.",
+        cell: ({ row }) => (
+          <span className="inline-flex min-w-[104px] rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-mono text-sm font-bold tabular-nums text-emerald-800 shadow-sm shadow-emerald-950/5 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-100">
+            {row.original.project.projectNumber || "未採番"}
+          </span>
+        ),
+      },
+      {
         accessorKey: "project.name",
         header: "案件名",
         cell: ({ row }) => (
-          <div>
-            <p className="font-medium text-white">{row.original.project.name}</p>
-            <p className="mt-1 text-xs text-slate-500">{row.original.project.constructionName}</p>
+          <div className="min-w-[260px] max-w-[320px] whitespace-normal break-keep">
+            <p className="font-medium leading-relaxed text-white">{row.original.project.name}</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">{row.original.project.constructionName}</p>
           </div>
         ),
       },
       {
         accessorKey: "project.clientName",
         header: "顧客名",
-        cell: ({ row }) => getProjectClientLabel(row.original.project),
+        cell: ({ row }) => <span className="inline-block min-w-[120px]">{getProjectClientLabel(row.original.project)}</span>,
       },
       {
         accessorKey: "location",
         header: "工事場所",
         cell: ({ row }) => (
-          <span className="inline-flex items-center gap-2 text-slate-300">
+          <span className="inline-flex min-w-[220px] items-center gap-2 text-slate-300">
             <MapPin className="size-3.5 text-emerald-400" />
             {row.original.project.location}
           </span>
@@ -222,6 +246,15 @@ function ProjectsDataTable({ projects }: { projects: ProjectProfitMetrics[] }) {
               onChange={(nextStatus) => updateProject(row.original.project.id, { status: nextStatus })}
             />
           </div>
+        ),
+      },
+      {
+        id: "assignedTo",
+        header: "担当",
+        cell: ({ row }) => (
+          <span className="inline-flex min-w-[96px] rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-semibold text-slate-300">
+            {getProjectUserLabel(row.original.project.assignedTo, cloudUser)}
+          </span>
         ),
       },
       {
@@ -285,7 +318,7 @@ function ProjectsDataTable({ projects }: { projects: ProjectProfitMetrics[] }) {
         ),
       },
     ],
-    [],
+    [cloudUser, deleteProject, navigate, updateProject],
   );
 
   const table = useReactTable({
@@ -296,7 +329,7 @@ function ProjectsDataTable({ projects }: { projects: ProjectProfitMetrics[] }) {
 
   return (
     <>
-      <Table>
+      <Table className="min-w-[1900px]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id} className="hover:bg-transparent">
@@ -360,7 +393,8 @@ function ProjectCreateDialog({
 }) {
   const navigate = useNavigate();
   const createProject = useProjectStore((state) => state.createProject);
-  const customers = useProjectStore((state) => state.customers);
+  const allCustomers = useProjectStore((state) => state.customers);
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
   const [customerCreateOpen, setCustomerCreateOpen] = useState(false);
   const [form, setForm] = useState<NewProjectInput>({
     customerId: "",
@@ -632,6 +666,22 @@ function getNextActionTone(value?: string) {
   if (days < 0) return { label: "期限超過", className: "text-red-300" };
   if (days <= 3) return { label: "要確認", className: "text-amber-300" };
   return { label: "予定済み", className: "text-emerald-300" };
+}
+
+function compareProjectNumbers(a?: string, b?: string) {
+  const parsedA = parseProjectNumber(a);
+  const parsedB = parseProjectNumber(b);
+  if (parsedA.year !== parsedB.year) return parsedB.year - parsedA.year;
+  if (parsedA.sequence !== parsedB.sequence) return parsedA.sequence - parsedB.sequence;
+  return String(a ?? "").localeCompare(String(b ?? ""), "ja");
+}
+
+function parseProjectNumber(value?: string) {
+  const match = String(value ?? "").match(/^(\d{4})-(\d+)$/);
+  return {
+    year: match ? Number(match[1]) : 0,
+    sequence: match ? Number(match[2]) : Number.MAX_SAFE_INTEGER,
+  };
 }
 
 function getProjectClientLabel(project: Pick<Project, "clientName" | "clientCompanyName">) {

@@ -18,7 +18,7 @@ export function getInvoiceTotalAmount(invoice: InvoiceDocument) {
 }
 
 export function getInvoicePaidAmount(invoice: InvoiceDocument) {
-  return invoice.paidAmount ?? (invoice.paymentRecords ?? []).reduce((sum, record) => sum + record.amount, 0);
+  return invoice.paidAmount ?? (invoice.paymentRecords ?? []).reduce((sum, record) => (record.deletedAt ? sum : sum + record.amount), 0);
 }
 
 export function getInvoiceOutstandingAmount(invoice: InvoiceDocument) {
@@ -45,20 +45,22 @@ export function buildPaymentInvoiceSummaries({
   invoices: InvoiceDocument[];
   projects: Project[];
 }): PaymentInvoiceSummary[] {
+  const activeProjects = projects.filter((project) => !project.deletedAt);
   return invoices
+    .filter((invoice) => !invoice.deletedAt)
     .map((invoice) => {
       const paidAmount = getInvoicePaidAmount(invoice);
       const invoiceTotal = getInvoiceTotalAmount(invoice);
       const outstandingAmount = Math.max(0, invoiceTotal - paidAmount);
       return {
         invoice,
-        project: projects.find((project) => project.id === invoice.projectId),
+        project: activeProjects.find((project) => project.id === invoice.projectId),
         invoiceTotal,
         paidAmount,
         outstandingAmount,
         overpaidAmount: Math.max(0, paidAmount - invoiceTotal),
         collectionStatus: getInvoiceCollectionStatus(invoice),
-        paymentRecords: invoice.paymentRecords ?? [],
+        paymentRecords: (invoice.paymentRecords ?? []).filter((record) => !record.deletedAt),
       };
     })
     .sort((a, b) => getInvoiceSortDate(b.invoice).localeCompare(getInvoiceSortDate(a.invoice)));
@@ -71,12 +73,14 @@ export function flattenPaymentRecords({
   invoices: InvoiceDocument[];
   projects: Project[];
 }) {
+  const activeProjects = projects.filter((project) => !project.deletedAt);
   return invoices
+    .filter((invoice) => !invoice.deletedAt)
     .flatMap((invoice) =>
-      (invoice.paymentRecords ?? []).map((record) => ({
+      (invoice.paymentRecords ?? []).filter((record) => !record.deletedAt).map((record) => ({
         record,
         invoice,
-        project: projects.find((project) => project.id === invoice.projectId),
+        project: activeProjects.find((project) => project.id === invoice.projectId),
       })),
     )
     .sort((a, b) => safeDateString(b.record.paymentDate).localeCompare(safeDateString(a.record.paymentDate)));

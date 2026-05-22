@@ -26,14 +26,22 @@ import { ErrorBoundary } from "@/features/layout/ErrorBoundary";
 import { MainLayout } from "@/features/layout/MainLayout";
 import { ToastMessage, type ToastState } from "@/features/shared/ToastMessage";
 import { isInlineImageDataUrl, persistImageAssetReference, persistImageAssetReferences } from "@/lib/image-storage";
-import { defaultInteriorWorkItemMasterInputs } from "@/stores/defaults";
+import { getCurrentUser } from "@/lib/supabase-auth";
+import {
+  defaultInteriorWorkItemMasterInputs,
+  samplePortfolioCustomers,
+  samplePortfolioEstimateDocuments,
+  samplePortfolioInvoiceDocuments,
+  samplePortfolioProjectItems,
+  samplePortfolioProjects,
+} from "@/stores/defaults";
 import { useThemeStore } from "@/stores/theme-store";
 import {
   type CompanyInfo,
   useProjectStore,
 } from "@/stores/project-store";
 
-const appVersion = "0.9.6-beta";
+const appVersion = "v0.9.7-beta (限定ベータ)";
 const localStorageWarningBytes = 4.5 * 1024 * 1024;
 const interiorMastersSeedKey = "mitru-interior-masters-seeded-v1";
 const essentialInteriorMasterNames = new Set([
@@ -57,6 +65,9 @@ function AppShell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [globalToast, setGlobalToast] = useState<ToastState>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<MitruPendingUpdate | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
+  const [updateProgress, setUpdateProgress] = useState("");
   const theme = useThemeStore((state) => state.theme);
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
@@ -68,6 +79,82 @@ function AppShell() {
       const timer = window.setTimeout(() => setOnboardingOpen(true), 420);
       return () => window.clearTimeout(timer);
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshSupabaseUserOnStartup = async () => {
+      const state = useProjectStore.getState();
+      const settings = state.cloudSyncSettings;
+      console.info("[mitru:cloud-sync] refreshCurrentUser startup sync checked", {
+        enabled: settings.isEnabled,
+        hasSupabaseUrl: Boolean(settings.supabaseUrl.trim()),
+        hasSupabaseAnonKey: Boolean(settings.supabaseAnonKey.trim()),
+      });
+      if (!settings.isEnabled || !settings.supabaseUrl.trim() || !settings.supabaseAnonKey.trim()) return;
+
+      console.info("[mitru:cloud-sync] refreshCurrentUser startup sync started");
+      try {
+        const user = await getCurrentUser({
+          supabaseUrl: settings.supabaseUrl,
+          supabaseAnonKey: settings.supabaseAnonKey,
+        });
+        if (cancelled) return;
+        useProjectStore.getState().updateCloudSyncSettings({
+          authState: user ? "authenticated" : "idle",
+          user,
+          isConnected: user ? settings.isConnected : false,
+        });
+        console.info("[mitru:cloud-sync] refreshCurrentUser startup sync completed", {
+          authenticated: Boolean(user),
+          email: user?.email ?? null,
+        });
+      } catch (error) {
+        if (cancelled) return;
+        useProjectStore.getState().updateCloudSyncSettings({
+          authState: "error",
+          user: null,
+          isConnected: false,
+        });
+        console.error("[mitru:cloud-sync] refreshCurrentUser startup sync failed", error);
+      }
+    };
+
+    void refreshSupabaseUserOnStartup();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkForUpdates = async () => {
+      if (!isTauriRuntime()) return;
+
+      try {
+        const { check } = await import("@tauri-apps/plugin-updater");
+        const update = await check();
+        if (cancelled || !update) return;
+
+        setPendingUpdate({
+          version: update.version,
+          body: update.body ?? "",
+          date: update.date,
+          downloadAndInstall: update.downloadAndInstall.bind(update),
+        });
+        setUpdateStatus("available");
+      } catch (error) {
+        console.info("[Mitru] 更新チェックをスキップしました。", error);
+      }
+    };
+
+    const timer = window.setTimeout(() => void checkForUpdates(), 1800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -181,10 +268,137 @@ function AppShell() {
         <AppRouter />
         <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
         <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+        <UpdateDialog
+          update={pendingUpdate}
+          status={updateStatus}
+          progress={updateProgress}
+          onClose={() => {
+            if (updateStatus === "installing" || updateStatus === "relaunching") return;
+            setPendingUpdate(null);
+            setUpdateStatus("idle");
+            setUpdateProgress("");
+          }}
+          onInstall={async () => {
+            if (!pendingUpdate) return;
+            setUpdateStatus("installing");
+            setUpdateProgress("更新ファイルをダウンロードしています...");
+
+            try {
+              let downloaded = 0;
+              let contentLength = 0;
+
+              await pendingUpdate.downloadAndInstall((event) => {
+                if (event.event === "Started") {
+                  contentLength = event.data.contentLength ?? 0;
+                  setUpdateProgress("更新ファイルをダウンロードしています...");
+                }
+                if (event.event === "Progress") {
+                  downloaded += event.data.chunkLength;
+                  if (contentLength > 0) {
+                    const percent = Math.min(100, Math.round((downloaded / contentLength) * 100));
+                    setUpdateProgress(`更新ファイルをダウンロードしています... ${percent}%`);
+                  }
+                }
+                if (event.event === "Finished") {
+                  setUpdateProgress("更新をインストールしています...");
+                }
+              });
+
+              setUpdateStatus("relaunching");
+              setUpdateProgress("更新が完了しました。Mitruを再起動します...");
+              const { relaunch } = await import("@tauri-apps/plugin-process");
+              await relaunch();
+            } catch (error) {
+              console.error("[Mitru] 更新に失敗しました。", error);
+              setUpdateStatus("error");
+              setUpdateProgress("更新に失敗しました。時間を置いてもう一度お試しください。");
+            }
+          }}
+        />
         <ToastMessage toast={globalToast} onClose={() => setGlobalToast(null)} />
       </MainLayout>
     </ErrorBoundary>
   );
+}
+
+type UpdateStatus = "idle" | "available" | "installing" | "relaunching" | "error";
+
+type UpdaterDownloadEvent =
+  | { event: "Started"; data: { contentLength?: number } }
+  | { event: "Progress"; data: { chunkLength: number } }
+  | { event: "Finished"; data?: unknown };
+
+type MitruPendingUpdate = {
+  version: string;
+  body: string;
+  date?: string;
+  downloadAndInstall: (onEvent: (event: UpdaterDownloadEvent) => void) => Promise<void>;
+};
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+function forceLoadLatestSamplePortfolio() {
+  const sampleCustomerIds = new Set(samplePortfolioCustomers.map((customer) => customer.id));
+  const sampleProjectIds = new Set(samplePortfolioProjects.map((project) => project.id));
+  const sampleEstimateDocumentIds = new Set(samplePortfolioEstimateDocuments.map((document) => document.id));
+  const sampleInvoiceDocumentIds = new Set(samplePortfolioInvoiceDocuments.map((document) => document.id));
+
+  useProjectStore.setState((state) => ({
+    customers: [
+      ...state.customers.filter((customer) => !sampleCustomerIds.has(customer.id)),
+      ...samplePortfolioCustomers,
+    ],
+    projects: [
+      ...state.projects.filter((project) => !sampleProjectIds.has(project.id)),
+      ...samplePortfolioProjects,
+    ],
+    projectItems: [
+      ...state.projectItems.filter(
+        (item) => !sampleProjectIds.has(item.projectId) && !item.id.startsWith("sample-"),
+      ),
+      ...samplePortfolioProjectItems,
+    ],
+    costSettingsByProjectId: omitSampleProjectKeys(state.costSettingsByProjectId, sampleProjectIds),
+    quoteSettingsByProjectId: omitSampleProjectKeys(state.quoteSettingsByProjectId, sampleProjectIds),
+    invoiceSettingsByProjectId: omitSampleProjectKeys(state.invoiceSettingsByProjectId, sampleProjectIds),
+    invoiceItemsByItemId: Object.fromEntries(
+      Object.entries(state.invoiceItemsByItemId).filter(([itemId]) => !itemId.startsWith("sample-")),
+    ),
+    sealSettingsByProjectId: omitSampleProjectKeys(state.sealSettingsByProjectId, sampleProjectIds),
+    estimateDocuments: [
+      ...state.estimateDocuments.filter(
+        (document) => !sampleProjectIds.has(document.projectId) && !sampleEstimateDocumentIds.has(document.id),
+      ),
+      ...samplePortfolioEstimateDocuments,
+    ],
+    invoiceDocuments: [
+      ...state.invoiceDocuments.filter(
+        (document) => !sampleProjectIds.has(document.projectId) && !sampleInvoiceDocumentIds.has(document.id),
+      ),
+      ...samplePortfolioInvoiceDocuments,
+    ],
+    deliveryDocuments: state.deliveryDocuments.filter((document) => !sampleProjectIds.has(document.projectId)),
+    orderDocuments: state.orderDocuments.filter((document) => !sampleProjectIds.has(document.projectId)),
+  }));
+
+  const currentState = useProjectStore.getState();
+  defaultInteriorWorkItemMasterInputs.forEach((master) => {
+    const exists = useProjectStore
+      .getState()
+      .workItemMasters.some(
+        (item) =>
+          item.majorCategory === master.majorCategory &&
+          item.middleCategory === master.middleCategory &&
+          item.name === master.name,
+      );
+    if (!exists) currentState.createWorkItemMaster(master);
+  });
+}
+
+function omitSampleProjectKeys<T>(record: Record<string, T>, sampleProjectIds: Set<string>) {
+  return Object.fromEntries(Object.entries(record).filter(([projectId]) => !sampleProjectIds.has(projectId)));
 }
 
 async function migrateExistingInlineImagesToIndexedDb() {
@@ -218,6 +432,73 @@ function estimateLocalStorageBytes() {
   return total * 2;
 }
 
+function UpdateDialog({
+  update,
+  status,
+  progress,
+  onInstall,
+  onClose,
+}: {
+  update: MitruPendingUpdate | null;
+  status: UpdateStatus;
+  progress: string;
+  onInstall: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const isBusy = status === "installing" || status === "relaunching";
+
+  return (
+    <Dialog open={Boolean(update)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="border-white/10 bg-white text-slate-950 shadow-2xl dark:bg-slate-950 dark:text-white sm:max-w-lg">
+        <DialogHeader>
+          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+            <FileDown className="h-6 w-6" />
+          </div>
+          <DialogTitle className="text-2xl font-bold tracking-normal">
+            Mitruの新しいバージョンがあります
+          </DialogTitle>
+          <DialogDescription className="leading-7 text-slate-600 dark:text-slate-400">
+            現在のバージョンは {appVersion} です。最新版へ更新すると、機能改善と不具合修正が適用されます。
+          </DialogDescription>
+        </DialogHeader>
+
+        {update ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="text-sm text-slate-500 dark:text-slate-400">更新バージョン</p>
+              <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{update.version}</p>
+              {update.body ? (
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {update.body}
+                </p>
+              ) : null}
+            </div>
+
+            {progress ? (
+              <p className={status === "error" ? "text-sm font-medium text-red-600" : "text-sm text-slate-600 dark:text-slate-300"}>
+                {progress}
+              </p>
+            ) : null}
+
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={onClose} disabled={isBusy}>
+                あとで
+              </Button>
+              <Button
+                onClick={() => void onInstall()}
+                disabled={isBusy}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                {isBusy ? "更新中..." : "今すぐ更新"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function OnboardingDialog({
   open,
   onOpenChange,
@@ -226,9 +507,6 @@ function OnboardingDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const createProject = useProjectStore((state) => state.createProject);
-  const updateProject = useProjectStore((state) => state.updateProject);
-  const importSampleItems = useProjectStore((state) => state.importSampleItems);
   const [hideNextTime, setHideNextTime] = useState(true);
 
   const complete = () => {
@@ -237,106 +515,17 @@ function OnboardingDialog({
   };
 
   const startWithSample = () => {
-    const project = createProject({
-      name: "初回サンプル リフォーム工事",
-      clientName: "サンプル施主",
-      constructionName: "水回り・内装リフォーム",
-      location: "東京都サンプル区 Mitru 1-2-3",
-      startDate: "2026-05-20",
-      endDate: "2026-06-30",
-      note: "オンボーディング用のサンプル案件です。積算、見積書、請求書の流れを試せます。",
-    });
-    importSampleItems(project.id);
+    forceLoadLatestSamplePortfolio();
     localStorage.setItem("mitru-onboarding-completed", "true");
     onOpenChange(false);
-    navigate(`/projects/${project.id}`);
+    navigate(`/projects/${samplePortfolioProjects[0]?.id ?? ""}?tab=calculation`);
   };
 
   const loadSamplePortfolio = () => {
-    const samples = [
-      {
-        name: "サンプル 高粗利 内装リフォーム",
-        clientName: "高橋 彩",
-        constructionName: "マンション内装更新工事",
-        location: "東京都杉並区",
-        startDate: "2026-05-22",
-        endDate: "2026-06-28",
-        expectedPaymentDate: "2026-07-31",
-        status: "施工中" as const,
-        totalAmount: 7200000,
-        progress: 62,
-        note: "粗利率が高いパターンの確認用サンプルです。",
-      },
-      {
-        name: "サンプル 標準粗利 水回り改修",
-        clientName: "小林 誠",
-        constructionName: "浴室・洗面・給排水改修",
-        location: "神奈川県川崎市",
-        startDate: "2026-06-05",
-        endDate: "2026-07-20",
-        expectedPaymentDate: "2026-08-31",
-        status: "契約済" as const,
-        totalAmount: 9800000,
-        progress: 35,
-        note: "標準的な粗利率を想定したサンプルです。",
-      },
-      {
-        name: "サンプル 要注意 原状回復",
-        clientName: "",
-        clientCompanyName: "株式会社サンプルプロパティ",
-        constructionName: "オフィス原状回復工事",
-        location: "東京都品川区",
-        startDate: "2026-05-12",
-        endDate: "2026-06-08",
-        expectedPaymentDate: "2026-07-15",
-        status: "施工中" as const,
-        totalAmount: 4300000,
-        progress: 82,
-        note: "粗利率が低くなりやすい注意案件のサンプルです。",
-      },
-      {
-        name: "サンプル 完了 請求確認",
-        clientName: "森 由紀",
-        constructionName: "戸建て部分改装",
-        location: "埼玉県川越市",
-        startDate: "2026-03-10",
-        endDate: "2026-04-26",
-        expectedPaymentDate: "2026-05-31",
-        status: "完了" as const,
-        totalAmount: 5600000,
-        progress: 100,
-        note: "完了案件として書類と入金予定を見るためのサンプルです。",
-      },
-    ];
-
-    let firstProjectId = "";
-    samples.forEach((sample) => {
-      const project = createProject({
-        name: sample.name,
-        clientName: sample.clientName,
-        clientCompanyName: sample.clientCompanyName ?? "",
-        constructionName: sample.constructionName,
-        location: sample.location,
-        startDate: sample.startDate,
-        endDate: sample.endDate,
-        expectedPaymentDate: sample.expectedPaymentDate,
-        nextActionDate: sample.status === "完了" ? "" : "2026-05-18",
-        processMemo: sample.status === "完了" ? "引渡し済み。" : "次回打ち合わせで数量と単価を確認。",
-        ownerMemo: "サンプルデータです。自由に編集・削除できます。",
-        note: sample.note,
-      });
-      updateProject(project.id, {
-        status: sample.status,
-        totalAmount: sample.totalAmount,
-        progress: sample.progress,
-      });
-      importSampleItems(project.id);
-      if (!firstProjectId) firstProjectId = project.id;
-    });
-
+    forceLoadLatestSamplePortfolio();
     localStorage.setItem("mitru-onboarding-completed", "true");
     onOpenChange(false);
-    navigate(firstProjectId ? `/projects/${firstProjectId}?tab=calculation` : "/projects");
+    navigate(`/projects/${samplePortfolioProjects[0]?.id ?? ""}?tab=calculation`);
   };
 
   const handleOpenChange = (nextOpen: boolean) => {

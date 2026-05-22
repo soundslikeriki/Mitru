@@ -4,6 +4,7 @@ import {
   calculateLine,
 } from "@/features/calculation/lib/calculation";
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
+import { resolveProjectTaxRate } from "@/lib/tax";
 import {
   getProjectCostSettings,
   getProjectInvoiceSettings,
@@ -17,11 +18,11 @@ export function useProjectInvoice(project: Project) {
   const settingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const invoiceSettingsByProjectId = useProjectStore((state) => state.invoiceSettingsByProjectId);
   const invoiceItemsByItemId = useProjectStore((state) => state.invoiceItemsByItemId);
-  const customers = useProjectStore((state) => state.customers);
+  const allCustomers = useProjectStore((state) => state.customers);
   const updateInvoiceItemState = useProjectStore((state) => state.updateInvoiceItemState);
   const updateInvoiceItemStates = useProjectStore((state) => state.updateInvoiceItemStates);
   const updateInvoiceSettings = useProjectStore((state) => state.updateInvoiceSettings);
-  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const createInvoiceDocument = useProjectStore((state) => state.createInvoiceDocument);
   const duplicateInvoiceDocument = useProjectStore((state) => state.duplicateInvoiceDocument);
   const deleteInvoiceDocument = useProjectStore((state) => state.deleteInvoiceDocument);
@@ -34,10 +35,16 @@ export function useProjectInvoice(project: Project) {
     () => allItems.filter((item) => item.projectId === project.id),
     [allItems, project.id],
   );
+  const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
+  const invoiceDocuments = useMemo(
+    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
+    [allInvoiceDocuments],
+  );
   const costSettings = getProjectCostSettings(settingsByProjectId, project.id);
   const invoiceSettings = getProjectInvoiceSettings(invoiceSettingsByProjectId, project.id);
   const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
+  const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const projectInvoiceDocuments = useMemo(
     () => invoiceDocuments.filter((document) => document.projectId === project.id).sort((a, b) => b.version - a.version),
     [invoiceDocuments, project.id],
@@ -61,7 +68,7 @@ export function useProjectInvoice(project: Project) {
   });
   const invoiceTotals = calculateInvoiceTotals(
     invoiceLines,
-    taxSettings.standardTaxRate,
+    projectTaxRate,
     taxSettings.taxRoundingMode,
     taxSettings.totalRoundingMode,
   );
@@ -82,6 +89,7 @@ export function useProjectInvoice(project: Project) {
     companyInfo,
     pdfTemplateSettings,
     taxSettings,
+    projectTaxRate,
     sealSettings,
     recipientInfo,
     invoiceLines,
