@@ -129,14 +129,14 @@ Mitruはローカルファーストのため、案件・顧客・書類・マス
 
 ## アプリ内アップデート
 
-Mitru v0.9.7-betaではTauri Updaterによる自動更新を使用しない。アプリ内の「更新を確認」ボタンは、GitHub Releasesの最新版ページをブラウザで開く手動更新導線として扱う。
+Mitru v0.9.7-betaではTauri Updaterによる自動更新を使用しない。アプリ内の「更新を確認」ボタンは、Mitru特設サイトのダウンロードページをブラウザで開く手動更新導線として扱う。
 
 Mitru v0.9.7-betaでは、任意でSupabaseを使ったBring Your Own Supabase方式のクラウド同期を利用できる。クラウド同期はオフライン優先の補助機能であり、実案件同期前には必ずバックアップ作成を案内する。
 
 現在の手動更新URL:
 
 ```text
-https://mitru-app-rikiharada93-2282s-projects.vercel.app/
+https://mitru-app.vercel.app/
 ```
 
 リリース作成時に必要なもの:

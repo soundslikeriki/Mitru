@@ -44,7 +44,7 @@ import {
 } from "@/stores/project-store";
 
 const appVersion = "v0.9.7-beta (限定ベータ)";
-const downloadPageUrl = "https://mitru-app-rikiharada93-2282s-projects.vercel.app/";
+const downloadPageUrl = "https://mitru-app.vercel.app/";
 const localStorageWarningBytes = 4.5 * 1024 * 1024;
 const interiorMastersSeedKey = "mitru-interior-masters-seeded-v1";
 const essentialInteriorMasterNames = new Set([
