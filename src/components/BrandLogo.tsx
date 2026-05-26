@@ -17,8 +17,8 @@ export function BrandLogo({
   animated = false,
 }: BrandLogoProps) {
   const mark = (
-    <div className={`overflow-hidden rounded-xl bg-white shadow-lg shadow-blue-950/20 ${markClassName}`}>
-      <img src={mitruMark} alt="Mitru" className="size-full object-cover" />
+    <div className={`grid place-items-center ${markClassName}`}>
+      <img src={mitruMark} alt="Mitru" className="size-full object-contain drop-shadow-[0_10px_24px_rgba(14,165,233,0.24)]" />
     </div>
   );
 

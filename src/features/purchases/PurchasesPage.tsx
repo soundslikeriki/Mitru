@@ -113,22 +113,22 @@ export function PurchasesPage() {
 
       <section className="mt-5 grid gap-4">
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] table-auto text-sm">
-            <thead>
-              <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
-                <th className="px-4 py-3">注文番号</th>
-                <th className="px-4 py-3">案件名</th>
-                <th className="px-4 py-3">発注先</th>
-                <th className="px-4 py-3 text-right">発注額</th>
-                <th className="px-4 py-3 text-right">仕入済</th>
-                <th className="px-4 py-3 text-right">発注残</th>
-                <th className="px-4 py-3">納期</th>
-                <th className="px-4 py-3">価格差</th>
-                <th className="px-4 py-3 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="overflow-x-auto overscroll-x-contain">
+            <table className="w-full min-w-[1320px] table-auto whitespace-nowrap text-sm">
+              <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
+                <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
+                  <th className="px-4 py-3">注文番号</th>
+                  <th className="px-4 py-3">案件名</th>
+                  <th className="px-4 py-3">発注先</th>
+                  <th className="px-4 py-3 text-right">発注額</th>
+                  <th className="px-4 py-3 text-right">仕入済</th>
+                  <th className="px-4 py-3 text-right">発注残</th>
+                  <th className="px-4 py-3">納期</th>
+                  <th className="px-4 py-3">価格差</th>
+                  <th className="px-4 py-3 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
               {filteredSummaries.map(({ order, project, orderedAmount, purchasedAmount, remainingAmount, unitPriceDiff }, index) => (
                 <motion.tr
                   key={order.id}
@@ -177,9 +177,9 @@ export function PurchasesPage() {
                   </td>
                 </tr>
               )}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

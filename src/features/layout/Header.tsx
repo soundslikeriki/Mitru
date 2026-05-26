@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ClipboardList, FileText, PackageCheck, ReceiptText, Search, ShoppingCart } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import { BrandLogo } from "@/components/BrandLogo";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MobileSidebar } from "@/features/layout/Sidebar";
 import { getHeaderMeta } from "@/features/layout/navigation";
 import { useProjectStore } from "@/stores/project-store";
@@ -26,6 +27,7 @@ export function Header() {
   const orderDocuments = useProjectStore((state) => state.orderDocuments);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchDialogOpen, setSearchDialogOpen] = useState(false);
   const headerMeta = getHeaderMeta(location.pathname);
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
@@ -168,6 +170,7 @@ export function Header() {
   const openSearchResult = (result: GlobalSearchResult) => {
     setSearchQuery("");
     setSearchFocused(false);
+    setSearchDialogOpen(false);
     navigate(result.path);
   };
 
@@ -187,8 +190,8 @@ export function Header() {
             {headerMeta.section}
           </h1>
         </div>
-        <div className="relative hidden 2xl:block">
-          <label className="flex h-10 w-[min(30vw,300px)] min-w-[220px] items-center gap-3 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-400 transition focus-within:border-emerald-400/55 focus-within:bg-white/[0.09]">
+        <div className="relative hidden lg:block">
+          <label className="flex h-10 w-[240px] items-center gap-3 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-400 transition focus-within:border-emerald-400/55 focus-within:bg-white/[0.09] xl:w-[min(30vw,360px)] xl:min-w-[300px]">
             <Search className="size-4 shrink-0" />
             <input
               value={searchQuery}
@@ -203,40 +206,45 @@ export function Header() {
             />
           </label>
           {showSuggestions && (
-            <div className="absolute right-0 top-12 z-50 w-[360px] overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/35 backdrop-blur-xl">
-              {searchResults.length > 0 ? (
-                <div className="max-h-[320px] overflow-auto py-1">
-                  {searchResults.map((result) => (
-                    <button
-                      key={result.id}
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => openSearchResult(result)}
-                      className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/[0.07]"
-                    >
-                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-400/10 text-emerald-300">
-                        <SearchResultIcon kind={result.kind} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-white">{result.title}</span>
-                        <span className="mt-1 block truncate text-xs text-slate-400">
-                          {result.description}
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 flex-col items-end gap-1">
-                        <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-medium text-slate-300">{result.badge}</span>
-                        <span className="text-[11px] text-slate-500">{formatDate(result.date)}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="px-4 py-4 text-sm text-slate-400">一致する案件・書類がありません</div>
-              )}
-            </div>
+            <SearchResultsPanel results={searchResults} onSelect={openSearchResult} className="absolute right-0 top-12 z-50 w-[360px]" />
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setSearchDialogOpen(true);
+            setSearchFocused(false);
+          }}
+          className="grid size-10 shrink-0 place-items-center rounded-lg border border-white/10 bg-white/[0.06] text-slate-300 transition hover:border-emerald-400/40 hover:bg-white/[0.09] hover:text-white lg:hidden"
+          aria-label="検索を開く"
+        >
+          <Search className="size-4" />
+        </button>
       </div>
+      <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-xl gap-4 p-5 md:left-[calc(280px+((100vw-280px)/2))] md:w-[calc(100vw-312px)]">
+          <DialogHeader>
+            <DialogTitle>案件・書類を検索</DialogTitle>
+          </DialogHeader>
+          <label className="flex h-11 items-center gap-3 rounded-lg border border-white/10 bg-white/[0.06] px-3 text-sm text-slate-400 transition focus-within:border-emerald-400/55 focus-within:bg-white/[0.09]">
+            <Search className="size-4 shrink-0" />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              autoFocus
+              placeholder="案件No.・案件名・顧客名・書類番号で検索"
+              className="h-full min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
+            />
+          </label>
+          {normalizedSearchQuery ? (
+            <SearchResultsPanel results={searchResults} onSelect={openSearchResult} className="max-h-[55vh] w-full" />
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-slate-400">
+              検索キーワードを入力してください。
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }
@@ -260,6 +268,48 @@ function SearchResultIcon({ kind }: { kind: GlobalSearchResult["kind"] }) {
   if (kind === "delivery") return <PackageCheck className="size-4" />;
   if (kind === "order") return <ShoppingCart className="size-4" />;
   return <ClipboardList className="size-4" />;
+}
+
+function SearchResultsPanel({
+  results,
+  onSelect,
+  className = "",
+}: {
+  results: GlobalSearchResult[];
+  onSelect: (result: GlobalSearchResult) => void;
+  className?: string;
+}) {
+  return (
+    <div className={`overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl shadow-black/35 backdrop-blur-xl ${className}`}>
+      {results.length > 0 ? (
+        <div className="max-h-[320px] overflow-auto py-1">
+          {results.map((result) => (
+            <button
+              key={result.id}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onSelect(result)}
+              className="flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-white/[0.07]"
+            >
+              <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-emerald-400/10 text-emerald-300">
+                <SearchResultIcon kind={result.kind} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-white">{result.title}</span>
+                <span className="mt-1 block truncate text-xs text-slate-400">{result.description}</span>
+              </span>
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-medium text-slate-300">{result.badge}</span>
+                <span className="text-[11px] text-slate-500">{formatDate(result.date)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="px-4 py-4 text-sm text-slate-400">一致する案件・書類がありません</div>
+      )}
+    </div>
+  );
 }
 
 function formatDate(value: string) {

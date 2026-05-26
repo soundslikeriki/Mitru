@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Calculator,
   ClipboardList,
+  ExternalLink,
   FileDown,
   Info,
   PlusCircle,
   ReceiptText,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -42,6 +44,9 @@ import {
 } from "@/stores/project-store";
 
 const appVersion = "v0.9.7-beta (限定ベータ)";
+const currentVersion = "0.9.7-beta";
+const githubLatestReleaseUrl = "https://github.com/soundslikeriki/Mitru/releases/latest";
+const githubLatestReleaseApiUrl = "https://api.github.com/repos/soundslikeriki/Mitru/releases/latest";
 const localStorageWarningBytes = 4.5 * 1024 * 1024;
 const interiorMastersSeedKey = "mitru-interior-masters-seeded-v1";
 const essentialInteriorMasterNames = new Set([
@@ -65,9 +70,6 @@ function AppShell() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [globalToast, setGlobalToast] = useState<ToastState>(null);
-  const [pendingUpdate, setPendingUpdate] = useState<MitruPendingUpdate | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
-  const [updateProgress, setUpdateProgress] = useState("");
   const theme = useThemeStore((state) => state.theme);
   const [systemPrefersDark, setSystemPrefersDark] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia("(prefers-color-scheme: dark)").matches : false,
@@ -128,33 +130,72 @@ function AppShell() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const checkForUpdates = async () => {
-      if (!isTauriRuntime()) return;
-
-      try {
-        const { check } = await import("@tauri-apps/plugin-updater");
-        const update = await check();
-        if (cancelled || !update) return;
-
-        setPendingUpdate({
-          version: update.version,
-          body: update.body ?? "",
-          date: update.date,
-          downloadAndInstall: update.downloadAndInstall.bind(update),
+    const handleManualUpdateCheck = (event: Event) => {
+      const detail = (event as CustomEvent<{ skipOpenReleasePage?: boolean; simpleFeedback?: boolean }>).detail;
+      const simpleFeedback = Boolean(detail?.simpleFeedback);
+      const showSimpleFeedback = () => {
+        setGlobalToast({
+          title: "GitHub Releasesを開きました",
+          description: "GitHub Releasesで最新版を確認してください。",
+          tone: "success",
         });
-        setUpdateStatus("available");
-      } catch (error) {
-        console.info("[Mitru] 更新チェックをスキップしました。", error);
-      }
+        window.setTimeout(() => setGlobalToast(null), 5200);
+      };
+      void checkForUpdatesManually({
+        skipOpenReleasePage: Boolean(detail?.skipOpenReleasePage),
+        onUpdateFound: (latestVersion) => {
+          setGlobalToast({
+            title: simpleFeedback ? "GitHub Releasesを開きました" : "新しいバージョンがあります",
+            description: latestVersion
+              ? `最新版 ${latestVersion} をGitHub Releasesで確認してください。`
+              : "GitHub Releasesで最新版を確認してください。",
+            tone: "success",
+          });
+          window.setTimeout(() => setGlobalToast(null), 6200);
+        },
+        onUpToDate: (latestVersion) => {
+          if (simpleFeedback) {
+            showSimpleFeedback();
+            return;
+          }
+          setGlobalToast({
+            title: "Mitruは最新版です",
+            description: latestVersion
+              ? `現在のバージョン ${currentVersion} は、最新リリース ${latestVersion} と同等以上です。`
+              : `現在のバージョンは ${currentVersion} です。GitHub Releasesも開きました。`,
+            tone: "success",
+          });
+          window.setTimeout(() => setGlobalToast(null), 6200);
+        },
+        onUnavailable: () => {
+          if (simpleFeedback) {
+            showSimpleFeedback();
+            return;
+          }
+          setGlobalToast({
+            title: "リリースページを開きました",
+            description: "この環境では最新版の自動比較ができませんでした。GitHub Releasesで最新版を確認してください。",
+            tone: "success",
+          });
+          window.setTimeout(() => setGlobalToast(null), 6200);
+        },
+        onError: () => {
+          if (simpleFeedback) {
+            showSimpleFeedback();
+            return;
+          }
+          setGlobalToast({
+            title: "更新確認に失敗しました",
+            description: "GitHub Releasesを開きました。ネットワーク状況を確認してから、最新版を確認してください。",
+            tone: "error",
+          });
+          window.setTimeout(() => setGlobalToast(null), 6200);
+        },
+      });
     };
 
-    const timer = window.setTimeout(() => void checkForUpdates(), 1800);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
+    window.addEventListener("mitru-check-updates", handleManualUpdateCheck);
+    return () => window.removeEventListener("mitru-check-updates", handleManualUpdateCheck);
   }, []);
 
   useEffect(() => {
@@ -268,75 +309,107 @@ function AppShell() {
         <AppRouter />
         <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
         <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
-        <UpdateDialog
-          update={pendingUpdate}
-          status={updateStatus}
-          progress={updateProgress}
-          onClose={() => {
-            if (updateStatus === "installing" || updateStatus === "relaunching") return;
-            setPendingUpdate(null);
-            setUpdateStatus("idle");
-            setUpdateProgress("");
-          }}
-          onInstall={async () => {
-            if (!pendingUpdate) return;
-            setUpdateStatus("installing");
-            setUpdateProgress("更新ファイルをダウンロードしています...");
-
-            try {
-              let downloaded = 0;
-              let contentLength = 0;
-
-              await pendingUpdate.downloadAndInstall((event) => {
-                if (event.event === "Started") {
-                  contentLength = event.data.contentLength ?? 0;
-                  setUpdateProgress("更新ファイルをダウンロードしています...");
-                }
-                if (event.event === "Progress") {
-                  downloaded += event.data.chunkLength;
-                  if (contentLength > 0) {
-                    const percent = Math.min(100, Math.round((downloaded / contentLength) * 100));
-                    setUpdateProgress(`更新ファイルをダウンロードしています... ${percent}%`);
-                  }
-                }
-                if (event.event === "Finished") {
-                  setUpdateProgress("更新をインストールしています...");
-                }
-              });
-
-              setUpdateStatus("relaunching");
-              setUpdateProgress("更新が完了しました。Mitruを再起動します...");
-              const { relaunch } = await import("@tauri-apps/plugin-process");
-              await relaunch();
-            } catch (error) {
-              console.error("[Mitru] 更新に失敗しました。", error);
-              setUpdateStatus("error");
-              setUpdateProgress("更新に失敗しました。時間を置いてもう一度お試しください。");
-            }
-          }}
-        />
         <ToastMessage toast={globalToast} onClose={() => setGlobalToast(null)} />
       </MainLayout>
     </ErrorBoundary>
   );
 }
 
-type UpdateStatus = "idle" | "available" | "installing" | "relaunching" | "error";
-
-type UpdaterDownloadEvent =
-  | { event: "Started"; data: { contentLength?: number } }
-  | { event: "Progress"; data: { chunkLength: number } }
-  | { event: "Finished"; data?: unknown };
-
-type MitruPendingUpdate = {
-  version: string;
-  body: string;
-  date?: string;
-  downloadAndInstall: (onEvent: (event: UpdaterDownloadEvent) => void) => Promise<void>;
-};
-
 function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+async function openLatestReleasePage() {
+  if (isTauriRuntime()) {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(githubLatestReleaseUrl);
+    return;
+  }
+
+  window.open(githubLatestReleaseUrl, "_blank", "noopener,noreferrer");
+}
+
+async function checkForUpdatesManually({
+  skipOpenReleasePage,
+  onUpdateFound,
+  onUpToDate,
+  onUnavailable,
+  onError,
+}: {
+  skipOpenReleasePage?: boolean;
+  onUpdateFound: (latestVersion?: string) => void;
+  onUpToDate: (latestVersion?: string) => void;
+  onUnavailable: () => void;
+  onError: () => void;
+}) {
+  try {
+    if (!skipOpenReleasePage) void openLatestReleasePage();
+
+    const latestRelease = await fetchLatestGitHubRelease();
+    if (!latestRelease) {
+      onUnavailable();
+      return;
+    }
+
+    if (compareVersionStrings(latestRelease.version, currentVersion) > 0) {
+      onUpdateFound(latestRelease.version);
+      return;
+    }
+
+    onUpToDate(latestRelease.version);
+  } catch (error) {
+    console.warn("[Mitru] 手動更新確認に失敗しました。", error);
+    onError();
+  }
+}
+
+async function fetchLatestGitHubRelease() {
+  const response = await fetch(githubLatestReleaseApiUrl, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!response.ok) return null;
+  const data = (await response.json()) as {
+    tag_name?: string;
+    name?: string;
+    body?: string;
+    published_at?: string;
+  };
+  const version = normalizeVersion(data.tag_name || data.name || "");
+  if (!version) return null;
+  return {
+    version,
+    body: data.body ?? "",
+    publishedAt: data.published_at,
+  };
+}
+
+function normalizeVersion(value: string) {
+  return value.trim().replace(/^v/i, "");
+}
+
+function compareVersionStrings(a: string, b: string) {
+  const left = parseVersionForCompare(a);
+  const right = parseVersionForCompare(b);
+  for (let index = 0; index < 3; index += 1) {
+    if (left.parts[index] !== right.parts[index]) return left.parts[index] - right.parts[index];
+  }
+  if (left.prerelease === right.prerelease) return 0;
+  if (!left.prerelease) return 1;
+  if (!right.prerelease) return -1;
+  return left.prerelease.localeCompare(right.prerelease);
+}
+
+function parseVersionForCompare(value: string) {
+  const normalized = normalizeVersion(value);
+  const [versionPart, prerelease = ""] = normalized.split("-", 2);
+  const parts = versionPart
+    .split(".")
+    .map((part) => Number.parseInt(part, 10))
+    .map((part) => (Number.isFinite(part) ? part : 0));
+  return {
+    parts: [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0],
+    prerelease,
+  };
 }
 
 function forceLoadLatestSamplePortfolio() {
@@ -430,73 +503,6 @@ function estimateLocalStorageBytes() {
     total += key.length + (localStorage.getItem(key)?.length ?? 0);
   }
   return total * 2;
-}
-
-function UpdateDialog({
-  update,
-  status,
-  progress,
-  onInstall,
-  onClose,
-}: {
-  update: MitruPendingUpdate | null;
-  status: UpdateStatus;
-  progress: string;
-  onInstall: () => Promise<void>;
-  onClose: () => void;
-}) {
-  const isBusy = status === "installing" || status === "relaunching";
-
-  return (
-    <Dialog open={Boolean(update)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="border-white/10 bg-white text-slate-950 shadow-2xl dark:bg-slate-950 dark:text-white sm:max-w-lg">
-        <DialogHeader>
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-            <FileDown className="h-6 w-6" />
-          </div>
-          <DialogTitle className="text-2xl font-bold tracking-normal">
-            Mitruの新しいバージョンがあります
-          </DialogTitle>
-          <DialogDescription className="leading-7 text-slate-600 dark:text-slate-400">
-            現在のバージョンは {appVersion} です。最新版へ更新すると、機能改善と不具合修正が適用されます。
-          </DialogDescription>
-        </DialogHeader>
-
-        {update ? (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
-              <p className="text-sm text-slate-500 dark:text-slate-400">更新バージョン</p>
-              <p className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">{update.version}</p>
-              {update.body ? (
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {update.body}
-                </p>
-              ) : null}
-            </div>
-
-            {progress ? (
-              <p className={status === "error" ? "text-sm font-medium text-red-600" : "text-sm text-slate-600 dark:text-slate-300"}>
-                {progress}
-              </p>
-            ) : null}
-
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <Button variant="outline" onClick={onClose} disabled={isBusy}>
-                あとで
-              </Button>
-              <Button
-                onClick={() => void onInstall()}
-                disabled={isBusy}
-                className="bg-emerald-600 text-white hover:bg-emerald-700"
-              >
-                {isBusy ? "更新中..." : "今すぐ更新"}
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 function OnboardingDialog({
@@ -650,6 +656,17 @@ function AboutDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const handleCheckUpdates = (event: MouseEvent<HTMLAnchorElement>) => {
+    const isTauri = "__TAURI_INTERNALS__" in window;
+    if (isTauri) event.preventDefault();
+    onOpenChange(false);
+    window.dispatchEvent(
+      new CustomEvent("mitru-check-updates", {
+        detail: { skipOpenReleasePage: !isTauri, simpleFeedback: true },
+      }),
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden border-white/10 bg-slate-950/95 p-0 text-white shadow-2xl shadow-black/45 backdrop-blur-2xl sm:max-w-xl">
@@ -690,6 +707,26 @@ function AboutDialog({
 
             <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.08] p-4 text-xs leading-6 text-slate-300">
               Mitruは完全ローカル動作を前提に設計されています。案件、積算、帳票、会社情報は端末内で扱われます。
+            </div>
+
+            <div className="rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.09] p-4">
+              <div className="flex items-start gap-3">
+                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-400/15 text-emerald-300">
+                  <RefreshCw className="size-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white">アプリの更新</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-300">
+                    現在のバージョンとGitHub Releasesの最新版を確認します。
+                  </p>
+                </div>
+              </div>
+              <Button asChild className="mt-4 w-full gap-2 bg-emerald-400 text-emerald-950 hover:bg-emerald-300">
+                <a href={githubLatestReleaseUrl} target="_blank" rel="noreferrer" onClick={handleCheckUpdates}>
+                  <ExternalLink className="size-4" />
+                  更新を確認
+                </a>
+              </Button>
             </div>
           </div>
         </div>

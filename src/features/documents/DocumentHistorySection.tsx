@@ -28,9 +28,9 @@ export function DocumentHistorySection({
         </div>
         <div className="flex flex-wrap gap-2">{actions}</div>
       </div>
-      <div className="overflow-x-auto rounded-xl border border-white/10 bg-slate-950/40">
-        <table className="w-full min-w-[620px] table-auto text-sm xl:min-w-0">
-          <thead>
+      <div className="overflow-x-auto overscroll-x-contain rounded-xl border border-white/10 bg-slate-950/40">
+        <table className="w-full min-w-[860px] table-auto whitespace-nowrap text-sm">
+          <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
             <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
               {columns.map((column) => (
                 <th key={column} className={`px-4 py-3 ${column === "操作" ? "text-right" : ""}`}>{column}</th>

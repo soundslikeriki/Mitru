@@ -21,9 +21,9 @@ export function CustomerList({
   onDelete: (customer: Customer) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[900px] table-auto text-sm xl:min-w-0">
-        <thead>
+    <div className="overflow-x-auto overscroll-x-contain">
+      <table className="w-full min-w-[1240px] table-auto whitespace-nowrap text-sm">
+        <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
           <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
             <th className="px-4 py-3">名前</th>
             <th className="px-4 py-3">会社名</th>
@@ -91,8 +91,8 @@ function CustomerTableRow({
       <td className="px-4 py-4 text-slate-300">{customer.companyName || "-"}</td>
       <td className="px-4 py-4 text-slate-300">{customer.phone || "-"}</td>
       <td className="px-4 py-4 text-slate-300">{customer.email || "-"}</td>
-      <td className="max-w-[240px] px-4 py-4 text-slate-400" title={customer.address}>
-        <span className="line-clamp-2">{customer.address || "-"}</span>
+      <td className="px-4 py-4 text-slate-400" title={customer.address}>
+        <span className="block max-w-[280px] truncate">{customer.address || "-"}</span>
       </td>
       <td className="px-4 py-4 text-slate-300">{recentProject?.name ?? "-"}</td>
       <td className="px-4 py-4 text-right">

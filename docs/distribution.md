@@ -131,24 +131,22 @@ Mitruはローカルファーストのため、案件・顧客・書類・マス
 
 ## アプリ内アップデート
 
-Mitru v0.9.6以降はTauri Updaterを組み込み、GitHub Releasesの `latest.json` を更新ソースとして参照する。
+Mitru v0.9.7-betaではTauri Updaterによる自動更新を使用しない。アプリ内の「更新を確認」ボタンは、GitHub Releasesの最新版ページをブラウザで開く手動更新導線として扱う。
 
 Mitru v0.9.7-betaでは、任意でSupabaseを使ったBring Your Own Supabase方式のクラウド同期を利用できる。クラウド同期はオフライン優先の補助機能であり、実案件同期前には必ずバックアップ作成を案内する。
 
-現在の更新チェックURL:
+現在の手動更新URL:
 
 ```text
-https://github.com/rikiharada/Mitru/releases/latest/download/latest.json
+https://github.com/soundslikeriki/Mitru/releases/latest
 ```
 
 リリース作成時に必要なもの:
 
-- GitHub ReleasesにmacOS用 `Mitru.app.tar.gz` と `.sig` をアップロードする
-- Windows配布時はNSIS/MSIの更新用アーティファクトと `.sig` をアップロードする
-- `latest.json` に対象プラットフォームごとの `url` と `signature` を記載する
-- ビルド時は `src-tauri/updater/mitru-updater.key` を使って更新アーティファクトに署名する
-
-秘密鍵 `src-tauri/updater/mitru-updater.key` は絶対に公開しない。紛失すると既存ユーザーへ安全な自動更新を配布できなくなる。
+- GitHub ReleasesにmacOS用 `.dmg` をアップロードする
+- Windows配布時はWindows環境で生成した `.exe` / `.msi` をアップロードする
+- リリースノートにバックアップ推奨、クラウド同期の実験的機能注意、`projectItems`同期対象外を明記する
+- 自動更新用の `latest.json`、署名ファイル、Updater署名キーは使用しない
 
 ## 全ターゲット指定
 

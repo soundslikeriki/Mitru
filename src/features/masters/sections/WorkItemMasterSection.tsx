@@ -16,6 +16,8 @@ import {
 import { isProtectedMaster } from "@/stores/slices/master-slice";
 
 const requiredFieldsMessage = "未入力の情報があります。すべての必須項目を入力してください。";
+const workMasterGridClass = "grid-cols-[44px_minmax(280px,1fr)_96px_140px_128px_128px_88px_132px]";
+const materialMasterGridClass = "grid-cols-[44px_minmax(260px,1fr)_148px_148px_minmax(220px,1fr)_88px_128px_132px]";
 
 export function WorkItemMasterSection() {
   const masters = useProjectStore((state) => state.workItemMasters);
@@ -190,37 +192,14 @@ export function WorkItemMasterSection() {
       </div>
 
       <section className="rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
-      <div className="grid gap-3 p-4">
-        <WorkMasterAccordionGroup
-          label="よく使う項目"
-          items={favoriteMasters}
-          open={searchActive || openCategories.has("よく使う項目")}
-          featured
-          emptyMessage="星を付けた工事項目がここに表示されます。よく使う項目を素早く選べます。"
-          onToggle={() => toggleCategory("よく使う項目")}
-          onFavorite={toggleWorkItemMasterFavorite}
-          onEdit={(master) => {
-            setEditingMaster(master);
-            setDialogOpen(true);
-          }}
-          onDelete={(master) => {
-            if (isProtectedMaster(master.id, { workItemMasters: masters })) {
-              alert("この大項目はシステムデフォルトのため削除できません。中項目・細目を追加して運用してください。");
-              return;
-            }
-            if (confirmDestructive("工事項目マスタを削除します", `${master.majorCategory} / ${master.name} を削除します。この操作は元に戻せません。`)) {
-              deleteWorkItemMaster(master.id);
-            }
-          }}
-        />
-
-        {groupedMasters.map((group) => (
+        <div className="grid gap-3 p-4">
           <WorkMasterAccordionGroup
-            key={group.label}
-            label={group.label}
-            items={group.items}
-            open={searchActive || openCategories.has(group.label)}
-            onToggle={() => toggleCategory(group.label)}
+            label="よく使う項目"
+            items={favoriteMasters}
+            open={searchActive || openCategories.has("よく使う項目")}
+            featured
+            emptyMessage="星を付けた工事項目がここに表示されます。よく使う項目を素早く選べます。"
+            onToggle={() => toggleCategory("よく使う項目")}
             onFavorite={toggleWorkItemMasterFavorite}
             onEdit={(master) => {
               setEditingMaster(master);
@@ -236,14 +215,37 @@ export function WorkItemMasterSection() {
               }
             }}
           />
-        ))}
 
-        {filteredMasters.length === 0 && (
-          <div className="rounded-xl border border-white/10 bg-white/[0.04] p-8 text-center text-sm text-slate-400">
-            条件に一致する工事項目がありません。
-          </div>
-        )}
-      </div>
+          {groupedMasters.map((group) => (
+            <WorkMasterAccordionGroup
+              key={group.label}
+              label={group.label}
+              items={group.items}
+              open={searchActive || openCategories.has(group.label)}
+              onToggle={() => toggleCategory(group.label)}
+              onFavorite={toggleWorkItemMasterFavorite}
+              onEdit={(master) => {
+                setEditingMaster(master);
+                setDialogOpen(true);
+              }}
+              onDelete={(master) => {
+                if (isProtectedMaster(master.id, { workItemMasters: masters })) {
+                  alert("この大項目はシステムデフォルトのため削除できません。中項目・細目を追加して運用してください。");
+                  return;
+                }
+                if (confirmDestructive("工事項目マスタを削除します", `${master.majorCategory} / ${master.name} を削除します。この操作は元に戻せません。`)) {
+                  deleteWorkItemMaster(master.id);
+                }
+              }}
+            />
+          ))}
+
+          {filteredMasters.length === 0 && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-8 text-center text-sm text-slate-400">
+              条件に一致する工事項目がありません。
+            </div>
+          )}
+        </div>
       </section>
 
       <WorkItemMasterDialog open={dialogOpen} onOpenChange={setDialogOpen} master={editingMaster} />
@@ -294,49 +296,67 @@ function WorkMasterAccordionGroup({
       </button>
 
       {open && (
-        <div className="divide-y divide-white/10 border-t border-white/10">
+        <div className="border-t border-white/10">
           {items.length === 0 && (
             <div className="px-4 py-5 text-sm text-slate-500">
               {emptyMessage}
             </div>
           )}
-          {items.map((master, index) => (
-            <motion.div
-              key={master.id}
-              className="grid gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04] xl:grid-cols-[44px_minmax(260px,1fr)_96px_118px_112px_112px_76px_132px]"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.01, duration: 0.16 }}
-            >
-              <div className="flex items-center">
-                <FavoriteButton
-                  active={Boolean(master.favorite)}
-                  label={`${master.majorCategory} / ${master.middleCategory} / ${master.name}`}
-                  onClick={() => onFavorite(master.id)}
-                />
+          {items.length > 0 && (
+            <div className="overflow-x-auto overscroll-x-contain">
+              <div className="min-w-[1160px]">
+                <div className={`sticky top-0 z-10 grid ${workMasterGridClass} gap-3 border-b border-white/10 bg-white/95 px-4 py-2 text-xs font-semibold text-slate-500 backdrop-blur dark:bg-slate-950/95`}>
+                  <span>★</span>
+                  <span>工事項目</span>
+                  <span>単位</span>
+                  <span>標準歩掛</span>
+                  <span className="text-right">労務単価</span>
+                  <span className="text-right">材料単価</span>
+                  <span className="text-right">経費率</span>
+                  <span className="text-right">操作</span>
+                </div>
+                <div className="divide-y divide-white/10">
+                  {items.map((master, index) => (
+                    <motion.div
+                      key={master.id}
+                      className={`grid ${workMasterGridClass} items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.01, duration: 0.16 }}
+                    >
+                      <div className="flex items-center">
+                        <FavoriteButton
+                          active={Boolean(master.favorite)}
+                          label={`${master.majorCategory} / ${master.middleCategory} / ${master.name}`}
+                          onClick={() => onFavorite(master.id)}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900 dark:text-white">
+                          <span className="text-emerald-700 dark:text-emerald-300">{master.middleCategory || "未分類"}</span>
+                          <span className="mx-1 text-slate-400">›</span>
+                          {master.name}
+                        </p>
+                      </div>
+                      <WorkMasterMeta label="単位" value={master.unit} />
+                      <WorkMasterMeta label="標準歩掛" value={`${master.standardLaborProductivity} 人日/${master.unit}`} />
+                      <WorkMasterMeta label="労務単価" value={formatCurrency(master.standardLaborUnitCost)} right />
+                      <WorkMasterMeta label="材料単価" value={formatCurrency(master.standardMaterialUnitCost)} right />
+                      <WorkMasterMeta label="経費率" value={`${Math.round(master.standardExpenseRate * 100)}%`} right />
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => onEdit(master)}>
+                          編集
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label="削除" onClick={() => onDelete(master)}>
+                          <Trash2 className="size-4 text-slate-400" />
+                        </Button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="line-clamp-2 font-semibold text-slate-900 dark:text-white">
-                  <span className="text-emerald-700 dark:text-emerald-300">{master.middleCategory || "未分類"}</span>
-                  <span className="mx-1 text-slate-400">›</span>
-                  {master.name}
-                </p>
-              </div>
-              <WorkMasterMeta label="単位" value={master.unit} />
-              <WorkMasterMeta label="標準歩掛" value={`${master.standardLaborProductivity} 人日/${master.unit}`} />
-              <WorkMasterMeta label="労務単価" value={formatCurrency(master.standardLaborUnitCost)} right />
-              <WorkMasterMeta label="材料単価" value={formatCurrency(master.standardMaterialUnitCost)} right />
-              <WorkMasterMeta label="経費率" value={`${Math.round(master.standardExpenseRate * 100)}%`} right />
-              <div className="flex items-center justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => onEdit(master)}>
-                  編集
-                </Button>
-                <Button variant="ghost" size="icon" aria-label="削除" onClick={() => onDelete(master)}>
-                  <Trash2 className="size-4 text-slate-400" />
-                </Button>
-              </div>
-            </motion.div>
-          ))}
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -426,37 +446,14 @@ export function MaterialMasterSection() {
       </div>
 
       <section className="rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
-      <div className="grid gap-3 p-4">
-        <MaterialMasterAccordionGroup
-          label="よく使う項目"
-          items={favoriteMaterials}
-          open={searchActive || openCategories.has("よく使う項目")}
-          featured
-          emptyMessage="星を付けた材料がここに表示されます。よく使う材料を素早く選べます。"
-          onToggle={() => toggleCategory("よく使う項目")}
-          onFavorite={toggleMaterialMasterFavorite}
-          onEdit={(material) => {
-            setEditingMaterial(material);
-            setDialogOpen(true);
-          }}
-          onDelete={(material) => {
-            if (isProtectedMaster(material.id, { materialMasters: materials })) {
-              alert("この材料カテゴリはシステムデフォルトのため削除できません。材料を追加して運用してください。");
-              return;
-            }
-            if (confirmDestructive("材料マスタを削除します", `${getMaterialDisplayName(material)} を削除します。この操作は元に戻せません。`)) {
-              deleteMaterialMaster(material.id);
-            }
-          }}
-        />
-
-        {groupedMaterials.map((group) => (
+        <div className="grid gap-3 p-4">
           <MaterialMasterAccordionGroup
-            key={group.label}
-            label={group.label}
-            items={group.items}
-            open={searchActive || openCategories.has(group.label)}
-            onToggle={() => toggleCategory(group.label)}
+            label="よく使う項目"
+            items={favoriteMaterials}
+            open={searchActive || openCategories.has("よく使う項目")}
+            featured
+            emptyMessage="星を付けた材料がここに表示されます。よく使う材料を素早く選べます。"
+            onToggle={() => toggleCategory("よく使う項目")}
             onFavorite={toggleMaterialMasterFavorite}
             onEdit={(material) => {
               setEditingMaterial(material);
@@ -472,14 +469,37 @@ export function MaterialMasterSection() {
               }
             }}
           />
-        ))}
 
-        {filteredMaterials.length === 0 && (
-          <div className="rounded-xl border border-white/10 bg-white/[0.04] p-8 text-center text-sm text-slate-400">
-            条件に一致する材料がありません。
-          </div>
-        )}
-      </div>
+          {groupedMaterials.map((group) => (
+            <MaterialMasterAccordionGroup
+              key={group.label}
+              label={group.label}
+              items={group.items}
+              open={searchActive || openCategories.has(group.label)}
+              onToggle={() => toggleCategory(group.label)}
+              onFavorite={toggleMaterialMasterFavorite}
+              onEdit={(material) => {
+                setEditingMaterial(material);
+                setDialogOpen(true);
+              }}
+              onDelete={(material) => {
+                if (isProtectedMaster(material.id, { materialMasters: materials })) {
+                  alert("この材料カテゴリはシステムデフォルトのため削除できません。材料を追加して運用してください。");
+                  return;
+                }
+                if (confirmDestructive("材料マスタを削除します", `${getMaterialDisplayName(material)} を削除します。この操作は元に戻せません。`)) {
+                  deleteMaterialMaster(material.id);
+                }
+              }}
+            />
+          ))}
+
+          {filteredMaterials.length === 0 && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-8 text-center text-sm text-slate-400">
+              条件に一致する材料がありません。
+            </div>
+          )}
+        </div>
       </section>
 
       <MaterialMasterDialog open={dialogOpen} onOpenChange={setDialogOpen} material={editingMaterial} />
@@ -530,46 +550,64 @@ function MaterialMasterAccordionGroup({
       </button>
 
       {open && (
-        <div className="divide-y divide-white/10 border-t border-white/10">
+        <div className="border-t border-white/10">
           {items.length === 0 && (
             <div className="px-4 py-5 text-sm text-slate-500">
               {emptyMessage}
             </div>
           )}
-          {items.map((material, index) => (
-            <motion.div
-              key={material.id}
-              className="grid gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04] xl:grid-cols-[44px_minmax(220px,1fr)_132px_140px_minmax(160px,1fr)_76px_112px_132px]"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.01, duration: 0.16 }}
-            >
-              <div className="flex items-center">
-                <FavoriteButton
-                  active={Boolean(material.favorite)}
-                  label={getMaterialDisplayName(material)}
-                  onClick={() => onFavorite(material.id)}
-                />
+          {items.length > 0 && (
+            <div className="overflow-x-auto overscroll-x-contain">
+              <div className="min-w-[1280px]">
+                <div className={`sticky top-0 z-10 grid ${materialMasterGridClass} gap-3 border-b border-white/10 bg-white/95 px-4 py-2 text-xs font-semibold text-slate-500 backdrop-blur dark:bg-slate-950/95`}>
+                  <span>★</span>
+                  <span>材料名</span>
+                  <span>品番</span>
+                  <span>メーカー</span>
+                  <span>規格</span>
+                  <span>単位</span>
+                  <span className="text-right">材料単価</span>
+                  <span className="text-right">操作</span>
+                </div>
+                <div className="divide-y divide-white/10">
+                  {items.map((material, index) => (
+                    <motion.div
+                      key={material.id}
+                      className={`grid ${materialMasterGridClass} items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.01, duration: 0.16 }}
+                    >
+                      <div className="flex items-center">
+                        <FavoriteButton
+                          active={Boolean(material.favorite)}
+                          label={getMaterialDisplayName(material)}
+                          onClick={() => onFavorite(material.id)}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900 dark:text-white">{getMaterialDisplayName(material)}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">分類: {getMaterialCategory(material)}</p>
+                      </div>
+                      <MaterialMasterMeta label="品番" value={material.productNumber || "-"} />
+                      <MaterialMasterMeta label="メーカー" value={material.manufacturer || "-"} />
+                      <MaterialMasterMeta label="規格" value={material.specification || "-"} />
+                      <MaterialMasterMeta label="単位" value={material.unit} />
+                      <MaterialMasterMeta label="材料単価" value={formatCurrency(material.materialUnitCost)} right />
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => onEdit(material)}>
+                          編集
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label="削除" onClick={() => onDelete(material)}>
+                          <Trash2 className="size-4 text-slate-400" />
+                        </Button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
               </div>
-              <div className="min-w-0">
-                <p className="line-clamp-2 font-semibold text-slate-900 dark:text-white">{getMaterialDisplayName(material)}</p>
-                <p className="mt-1 text-xs text-slate-500">分類: {getMaterialCategory(material)}</p>
-              </div>
-              <MaterialMasterMeta label="品番" value={material.productNumber || "-"} />
-              <MaterialMasterMeta label="メーカー" value={material.manufacturer || "-"} />
-              <MaterialMasterMeta label="規格" value={material.specification || "-"} />
-              <MaterialMasterMeta label="単位" value={material.unit} />
-              <MaterialMasterMeta label="材料単価" value={formatCurrency(material.materialUnitCost)} right />
-              <div className="flex items-center justify-end gap-2">
-                <Button variant="ghost" size="sm" onClick={() => onEdit(material)}>
-                  編集
-                </Button>
-                <Button variant="ghost" size="icon" aria-label="削除" onClick={() => onDelete(material)}>
-                  <Trash2 className="size-4 text-slate-400" />
-                </Button>
-              </div>
-            </motion.div>
-          ))}
+            </div>
+          )}
         </div>
       )}
     </section>

@@ -126,26 +126,28 @@ export function BillingClosePage() {
                     <p className="mt-1 text-xs text-slate-500">{group.items.length}件 / {formatCurrency(group.totalAmount)}</p>
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  {group.items.map(({ estimate, project, amount }) => (
-                    <label
-                      key={estimate.id}
-                      className="grid cursor-pointer gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 transition hover:bg-white/[0.06] md:grid-cols-[auto_1fr_120px_130px] md:items-center"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(estimate.id)}
-                        onChange={() => toggleCandidate(estimate.id)}
-                        className="size-4 accent-emerald-500"
-                      />
-                      <div>
-                        <p className="text-sm font-semibold text-white">{project?.name ?? "不明な案件"}</p>
-                        <p className="mt-1 text-xs text-slate-500">{estimate.documentNumber}</p>
-                      </div>
-                      <p className="text-xs text-slate-400">{formatDate(estimate.issuedAt)}</p>
-                      <p className="font-bold tabular-nums text-white md:text-right">{formatCurrency(amount)}</p>
-                    </label>
-                  ))}
+                <div className="overflow-x-auto overscroll-x-contain">
+                  <div className="grid min-w-[820px] gap-2">
+                    {group.items.map(({ estimate, project, amount }) => (
+                      <label
+                        key={estimate.id}
+                        className="grid cursor-pointer grid-cols-[auto_minmax(320px,1fr)_120px_130px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.035] p-3 transition hover:bg-white/[0.06]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(estimate.id)}
+                          onChange={() => toggleCandidate(estimate.id)}
+                          className="size-4 accent-emerald-500"
+                        />
+                        <div>
+                          <p className="text-sm font-semibold text-white">{project?.name ?? "不明な案件"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{estimate.documentNumber}</p>
+                        </div>
+                        <p className="text-xs text-slate-400">{formatDate(estimate.issuedAt)}</p>
+                        <p className="font-bold tabular-nums text-white md:text-right">{formatCurrency(amount)}</p>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
             );
@@ -160,25 +162,26 @@ export function BillingClosePage() {
         <h3 className="text-sm font-semibold text-white">締め処理履歴</h3>
         <div className="mt-4 grid gap-3">
           {billingCloseRecords.map((record) => (
-            <motion.div
-              key={record.id}
-              className="grid gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 md:grid-cols-[1fr_130px_130px_120px] md:items-center"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              <div>
-                <p className="font-semibold text-white">{record.clientName}</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  対象案件 {record.targetEstimateIds.length}件 / 作成請求書 {record.createdInvoiceIds.length}件
-                </p>
-              </div>
-              <p className="text-sm text-slate-300">{formatDate(record.closingDate)}</p>
-              <p className="font-bold tabular-nums text-white md:text-right">{formatCurrency(record.totalAmount)}</p>
-              <span className="w-fit rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
-                {record.status}
-              </span>
-            </motion.div>
+            <div key={record.id} className="overflow-x-auto overscroll-x-contain">
+              <motion.div
+                className="grid min-w-[760px] grid-cols-[minmax(320px,1fr)_130px_130px_120px] items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div>
+                  <p className="font-semibold text-white">{record.clientName}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    対象案件 {record.targetEstimateIds.length}件 / 作成請求書 {record.createdInvoiceIds.length}件
+                  </p>
+                </div>
+                <p className="text-sm text-slate-300">{formatDate(record.closingDate)}</p>
+                <p className="font-bold tabular-nums text-white md:text-right">{formatCurrency(record.totalAmount)}</p>
+                <span className="w-fit rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
+                  {record.status}
+                </span>
+              </motion.div>
+            </div>
           ))}
           {billingCloseRecords.length === 0 && (
             <p className="rounded-xl border border-white/10 bg-white/[0.04] p-5 text-sm text-slate-500">締め処理履歴はまだありません。</p>

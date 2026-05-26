@@ -62,21 +62,21 @@ export function PaymentsPage() {
           </select>
         </div>
         <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] table-auto text-sm">
-            <thead>
-              <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
-                <th className="px-4 py-3">請求番号</th>
-                <th className="px-4 py-3">案件名</th>
-                <th className="px-4 py-3 text-right">請求額</th>
-                <th className="px-4 py-3 text-right">入金済</th>
-                <th className="px-4 py-3 text-right">残債</th>
-                <th className="px-4 py-3">状態</th>
-                <th className="px-4 py-3">支払期限</th>
-                <th className="px-4 py-3 text-right">操作</th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="overflow-x-auto overscroll-x-contain">
+            <table className="w-full min-w-[1200px] table-auto whitespace-nowrap text-sm">
+              <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
+                <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
+                  <th className="px-4 py-3">請求番号</th>
+                  <th className="px-4 py-3">案件名</th>
+                  <th className="px-4 py-3 text-right">請求額</th>
+                  <th className="px-4 py-3 text-right">入金済</th>
+                  <th className="px-4 py-3 text-right">残債</th>
+                  <th className="px-4 py-3">状態</th>
+                  <th className="px-4 py-3">支払期限</th>
+                  <th className="px-4 py-3 text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
               {filteredSummaries.map(({ invoice, project, invoiceTotal, paidAmount, outstandingAmount, overpaidAmount, collectionStatus }, index) => (
                 <motion.tr
                   key={invoice.id}
@@ -114,9 +114,9 @@ export function PaymentsPage() {
                   </td>
                 </tr>
               )}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

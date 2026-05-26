@@ -250,8 +250,8 @@ export function EstimatesPage() {
         onFilterChange={(value) => setStatus(value as EstimateDocument["status"] | "すべて")}
         filterOptions={["すべて", "下書き", "発行済", "失効"]}
       >
-        <table className="w-full min-w-[760px] table-auto text-sm xl:min-w-0">
-          <thead>
+        <table className="w-full min-w-[1120px] table-auto whitespace-nowrap text-sm">
+          <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
             <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
               <th className="px-4 py-3">見積番号</th>
               <th className="px-4 py-3">案件名</th>
@@ -412,8 +412,8 @@ export function InvoicesPage() {
         onFilterChange={(value) => setStatus(value as InvoiceDocument["status"] | "すべて")}
         filterOptions={["すべて", "下書き", "発行済", "入金済"]}
       >
-        <table className="w-full min-w-[720px] table-auto text-sm xl:min-w-0">
-          <thead>
+        <table className="w-full min-w-[1120px] table-auto whitespace-nowrap text-sm">
+          <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
             <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
               <th className="px-4 py-3">請求番号</th>
               <th className="px-4 py-3">案件名</th>
@@ -608,8 +608,8 @@ export function DeliveriesPage() {
       <DocumentListShell
         title="納品書一覧"
       >
-        <table className="w-full min-w-[760px] table-auto text-sm xl:min-w-0">
-          <thead>
+        <table className="w-full min-w-[1120px] table-auto whitespace-nowrap text-sm">
+          <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
             <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
               <th className="px-4 py-3">納品書番号</th>
               <th className="px-4 py-3">案件名</th>
@@ -804,8 +804,8 @@ export function OrdersPage() {
       <DocumentListShell
         title="注文書一覧"
       >
-        <table className="w-full min-w-[800px] table-auto text-sm xl:min-w-0">
-          <thead>
+        <table className="w-full min-w-[1200px] table-auto whitespace-nowrap text-sm">
+          <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
             <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
               <th className="px-4 py-3">注文書番号</th>
               <th className="px-4 py-3">案件名</th>
@@ -1023,7 +1023,7 @@ function DocumentListShell({
         </div>
       ) : null}
       <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
-        <div className="overflow-x-auto">{children}</div>
+        <div className="overflow-x-auto overscroll-x-contain">{children}</div>
       </section>
     </motion.div>
   );

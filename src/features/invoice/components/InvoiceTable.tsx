@@ -8,8 +8,8 @@ import type { InvoicePdfLine } from "@/features/documents/types";
 
 export function InvoiceTable({ lines }: { lines: InvoicePdfLine[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[860px] table-auto text-sm xl:min-w-0">
+    <div className="overflow-x-auto overscroll-x-contain">
+      <table className="w-full min-w-[1040px] table-auto whitespace-nowrap text-sm">
         <colgroup>
           <col className="w-[34%]" />
           <col className="w-[18%]" />
@@ -17,7 +17,7 @@ export function InvoiceTable({ lines }: { lines: InvoicePdfLine[] }) {
           <col className="w-[130px]" />
           <col className="w-[160px]" />
         </colgroup>
-        <thead>
+        <thead className="sticky top-0 z-10 bg-white/95 dark:bg-slate-950/95 backdrop-blur">
           <tr className="border-b border-white/10 text-left text-xs font-semibold text-slate-500">
             <th className="px-4 py-3">工事項目</th>
             <th className="px-4 py-3">品番・仕様</th>

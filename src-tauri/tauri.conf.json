@@ -25,12 +25,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' https: wss:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
     "targets": [
       "app",
       "dmg",
@@ -87,17 +86,6 @@
       },
       "wix": {
         "language": "ja-JP"
-      }
-    }
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU3ODFEQjgyQkNDQUFGRjMKUldUenI4cThndHVCVjVBVUo5NzAwTmN4WGRrRDZLVjFSam15N2FBVzE4NlFzeEdvVTJ3ek83RGEK",
-      "endpoints": [
-        "https://github.com/rikiharada/Mitru/releases/latest/download/latest.json"
-      ],
-      "windows": {
-        "installMode": "passive"
       }
     }
   }

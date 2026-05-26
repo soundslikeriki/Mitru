@@ -15,6 +15,7 @@
 - 設定画面、ヘルプ、READMEの警告文を「クラウド同期は実験的機能です。データ消失の可能性があります。必ずバックアップを取ってからONにしてください。」に統一。
 - 実Supabase回帰テスト用の「同期テストモード」を追加。ONの間だけ、同期対象件数、entity別cursor、push/pull結果をコンソールへ詳細出力。
 - 競合解決ダイアログに「ローカル全部優先」「クラウド全部優先」と主要項目の差分ヒントを追加。
+- 全一覧ページとマスタ設定ページの横スクロール仕様を統一し、13インチ幅でも列を潰さず確認できるように調整。
 
 ### Changed
 
@@ -27,12 +28,16 @@
 - `syncMetadata` 未作成または `lastSyncedAt` 未設定の新規レコードは必ずpush対象にするよう、dirty判定を強化。
 - クラウド同期設定画面の警告、ステータス、下部ガイドのレイアウトを限定ベータ公開向けに調整。
 - クラウド同期処理に軽量な共通ヘルパーを追加し、pull/push/sync処理の重複を削減。
+- デスクトップ配布向けにTauriのCSPを最低限設定し、`object-src` / `frame-src` を閉じつつ、BYO Supabase接続に必要な `https:` / `wss:` 通信を許可。
+- Tauri Updaterによる自動更新を削除し、更新確認はGitHub Releasesを開く手動更新導線に統一。
 
 ### Fixed
 
 - `lastSyncedAt` のentity共通利用による同期漏れリスクを、entity別cursorへ分離して修正。
 - ローカル時刻依存の差分判定を避けるため、Supabase側 `updated_at` と `(updated_at, id)` cursorを同期基準に変更。
 - ProjectHeader、ReportsPage、OrdersPageなどで発生しやすかったselector由来の無限再レンダリングを予防修正。
+- 配布前の作業で生成された不要な空ファイルを削除し、リポジトリ直下を整理。
+- Windowsビルド時に不要なUpdater署名処理が走らないよう、Updater設定、権限、Rust/JS依存、ビルドスクリプトの署名キー注入を削除。
 
 ### Beta Notes
 
