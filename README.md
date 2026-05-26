@@ -133,7 +133,7 @@ CIなどで `.app` だけを確認したい場合:
 MITRU_BUILD_APP_ONLY=1 npm run tauri:build:mac
 ```
 
-Windows向けにNSIS `.exe` インストーラーと `.msi` を作成する場合:
+Windows向けにNSIS `.exe` インストーラーを作成する場合:
 
 ```bash
 npm run tauri:build:windows
@@ -145,7 +145,7 @@ npm run tauri:build:windows
 npm run tauri:build:all
 ```
 
-WindowsインストーラーはWindows環境またはWindows向けCIでビルドしてください。macOSから直接Windows用 `.exe` / `.msi` を生成する構成ではありません。
+WindowsインストーラーはWindows環境またはWindows向けCIでビルドしてください。macOSから直接Windows用 `.exe` を生成する構成ではありません。
 
 別OS向けのビルドコマンドを誤った環境で実行した場合は、明確にエラー終了します。macOS版はmacOSで、Windows版はWindowsまたはWindows CIで生成してください。
 
@@ -158,10 +158,10 @@ Tauriはビルドを実行したOS向けの配布物を生成します。
 | OS | 主な成果物 | 備考 |
 | --- | --- | --- |
 | macOS | `.dmg`, `.app` | Apple Developer ID署名・公証はリリース前に別途設定 |
-| Windows | `.exe`, `.msi` | Windows環境またはCIでビルド |
+| Windows | `.exe` | Windows環境またはCIでビルド。限定ベータではNSISのみ |
 | Linux | `.AppImage`, `.deb`, `.rpm` | Linux環境またはCIでビルド |
 
-アプリ内の「更新を確認」ボタンはGitHub Releasesを開く手動更新導線です。Tauri Updaterによる自動更新と更新アーティファクト署名は使用していません。コード署名、公証、ストア公開設定は今後のリリース工程で追加します。
+アプリ内の「更新を確認」ボタンはMitru特設サイトのダウンロードページを開く手動更新導線です。Tauri Updaterによる自動更新と更新アーティファクト署名は使用していません。コード署名、公証、ストア公開設定は今後のリリース工程で追加します。
 
 ## アイコン
 

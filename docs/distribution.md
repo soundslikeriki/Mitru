@@ -50,7 +50,7 @@ MITRU_BUILD_APP_ONLY=1 npm run tauri:build:mac
 
 ## Windows
 
-WindowsではNSIS `.exe` インストーラーと `.msi` を生成する。
+WindowsではNSIS `.exe` インストーラーのみを生成する。限定ベータではMSIを無効化し、pre-release版のMSI制限を回避する。
 
 ```bash
 npm run tauri:build:windows
@@ -59,7 +59,6 @@ npm run tauri:build:windows
 成果物:
 
 - `src-tauri/target/release/bundle/nsis/*.exe`
-- `src-tauri/target/release/bundle/msi/*.msi`
 
 注意:
 
@@ -84,7 +83,7 @@ npm run tauri:build:windows
 ### Windowsビルド手順
 
 1. Windows 10/11環境を用意する。
-2. Node.js、Rust、Tauri CLI、NSIS、WiX Toolsetをインストールする。
+2. Node.js、Rust、Tauri CLI、NSISをインストールする。
 3. 依存関係を入れる。
 
 ```bash
@@ -97,7 +96,7 @@ npm install
 npm run build
 ```
 
-5. NSIS `.exe` と MSI `.msi` を作成する。
+5. NSIS `.exe` を作成する。
 
 ```bash
 npm run tauri:build:windows
@@ -107,7 +106,6 @@ npm run tauri:build:windows
 
 ```text
 src-tauri/target/release/bundle/nsis/
-src-tauri/target/release/bundle/msi/
 ```
 
 Windows配布前に確認すること:
@@ -138,13 +136,13 @@ Mitru v0.9.7-betaでは、任意でSupabaseを使ったBring Your Own Supabase�
 現在の手動更新URL:
 
 ```text
-https://github.com/soundslikeriki/Mitru/releases/latest
+https://mitru-app-rikiharada93-2282s-projects.vercel.app/
 ```
 
 リリース作成時に必要なもの:
 
-- GitHub ReleasesにmacOS用 `.dmg` をアップロードする
-- Windows配布時はWindows環境で生成した `.exe` / `.msi` をアップロードする
+- Mitru特設サイトのダウンロードページにmacOS用 `.dmg` を掲載する
+- Windows配布時はWindows環境で生成した NSIS `.exe` を掲載する
 - リリースノートにバックアップ推奨、クラウド同期の実験的機能注意、`projectItems`同期対象外を明記する
 - 自動更新用の `latest.json`、署名ファイル、Updater署名キーは使用しない
 

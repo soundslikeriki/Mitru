@@ -44,9 +44,7 @@ import {
 } from "@/stores/project-store";
 
 const appVersion = "v0.9.7-beta (限定ベータ)";
-const currentVersion = "0.9.7-beta";
-const githubLatestReleaseUrl = "https://github.com/soundslikeriki/Mitru/releases/latest";
-const githubLatestReleaseApiUrl = "https://api.github.com/repos/soundslikeriki/Mitru/releases/latest";
+const downloadPageUrl = "https://mitru-app-rikiharada93-2282s-projects.vercel.app/";
 const localStorageWarningBytes = 4.5 * 1024 * 1024;
 const interiorMastersSeedKey = "mitru-interior-masters-seeded-v1";
 const essentialInteriorMasterNames = new Set([
@@ -127,75 +125,6 @@ function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    const handleManualUpdateCheck = (event: Event) => {
-      const detail = (event as CustomEvent<{ skipOpenReleasePage?: boolean; simpleFeedback?: boolean }>).detail;
-      const simpleFeedback = Boolean(detail?.simpleFeedback);
-      const showSimpleFeedback = () => {
-        setGlobalToast({
-          title: "GitHub Releasesを開きました",
-          description: "GitHub Releasesで最新版を確認してください。",
-          tone: "success",
-        });
-        window.setTimeout(() => setGlobalToast(null), 5200);
-      };
-      void checkForUpdatesManually({
-        skipOpenReleasePage: Boolean(detail?.skipOpenReleasePage),
-        onUpdateFound: (latestVersion) => {
-          setGlobalToast({
-            title: simpleFeedback ? "GitHub Releasesを開きました" : "新しいバージョンがあります",
-            description: latestVersion
-              ? `最新版 ${latestVersion} をGitHub Releasesで確認してください。`
-              : "GitHub Releasesで最新版を確認してください。",
-            tone: "success",
-          });
-          window.setTimeout(() => setGlobalToast(null), 6200);
-        },
-        onUpToDate: (latestVersion) => {
-          if (simpleFeedback) {
-            showSimpleFeedback();
-            return;
-          }
-          setGlobalToast({
-            title: "Mitruは最新版です",
-            description: latestVersion
-              ? `現在のバージョン ${currentVersion} は、最新リリース ${latestVersion} と同等以上です。`
-              : `現在のバージョンは ${currentVersion} です。GitHub Releasesも開きました。`,
-            tone: "success",
-          });
-          window.setTimeout(() => setGlobalToast(null), 6200);
-        },
-        onUnavailable: () => {
-          if (simpleFeedback) {
-            showSimpleFeedback();
-            return;
-          }
-          setGlobalToast({
-            title: "リリースページを開きました",
-            description: "この環境では最新版の自動比較ができませんでした。GitHub Releasesで最新版を確認してください。",
-            tone: "success",
-          });
-          window.setTimeout(() => setGlobalToast(null), 6200);
-        },
-        onError: () => {
-          if (simpleFeedback) {
-            showSimpleFeedback();
-            return;
-          }
-          setGlobalToast({
-            title: "更新確認に失敗しました",
-            description: "GitHub Releasesを開きました。ネットワーク状況を確認してから、最新版を確認してください。",
-            tone: "error",
-          });
-          window.setTimeout(() => setGlobalToast(null), 6200);
-        },
-      });
-    };
-
-    window.addEventListener("mitru-check-updates", handleManualUpdateCheck);
-    return () => window.removeEventListener("mitru-check-updates", handleManualUpdateCheck);
   }, []);
 
   useEffect(() => {
@@ -308,7 +237,18 @@ function AppShell() {
       <MainLayout resolvedTheme={resolvedTheme} onAboutOpen={() => setAboutOpen(true)}>
         <AppRouter />
         <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
-        <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+        <AboutDialog
+          open={aboutOpen}
+          onOpenChange={setAboutOpen}
+          onDownloadPageOpen={() => {
+            setGlobalToast({
+              title: "ダウンロードページを開きます",
+              description: "特設サイトで最新版を確認してください。",
+              tone: "success",
+            });
+            window.setTimeout(() => setGlobalToast(null), 5200);
+          }}
+        />
         <ToastMessage toast={globalToast} onClose={() => setGlobalToast(null)} />
       </MainLayout>
     </ErrorBoundary>
@@ -319,97 +259,14 @@ function isTauriRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-async function openLatestReleasePage() {
+async function openDownloadPage() {
   if (isTauriRuntime()) {
     const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(githubLatestReleaseUrl);
+    await openUrl(downloadPageUrl);
     return;
   }
 
-  window.open(githubLatestReleaseUrl, "_blank", "noopener,noreferrer");
-}
-
-async function checkForUpdatesManually({
-  skipOpenReleasePage,
-  onUpdateFound,
-  onUpToDate,
-  onUnavailable,
-  onError,
-}: {
-  skipOpenReleasePage?: boolean;
-  onUpdateFound: (latestVersion?: string) => void;
-  onUpToDate: (latestVersion?: string) => void;
-  onUnavailable: () => void;
-  onError: () => void;
-}) {
-  try {
-    if (!skipOpenReleasePage) void openLatestReleasePage();
-
-    const latestRelease = await fetchLatestGitHubRelease();
-    if (!latestRelease) {
-      onUnavailable();
-      return;
-    }
-
-    if (compareVersionStrings(latestRelease.version, currentVersion) > 0) {
-      onUpdateFound(latestRelease.version);
-      return;
-    }
-
-    onUpToDate(latestRelease.version);
-  } catch (error) {
-    console.warn("[Mitru] 手動更新確認に失敗しました。", error);
-    onError();
-  }
-}
-
-async function fetchLatestGitHubRelease() {
-  const response = await fetch(githubLatestReleaseApiUrl, {
-    headers: { Accept: "application/vnd.github+json" },
-  });
-  if (!response.ok) return null;
-  const data = (await response.json()) as {
-    tag_name?: string;
-    name?: string;
-    body?: string;
-    published_at?: string;
-  };
-  const version = normalizeVersion(data.tag_name || data.name || "");
-  if (!version) return null;
-  return {
-    version,
-    body: data.body ?? "",
-    publishedAt: data.published_at,
-  };
-}
-
-function normalizeVersion(value: string) {
-  return value.trim().replace(/^v/i, "");
-}
-
-function compareVersionStrings(a: string, b: string) {
-  const left = parseVersionForCompare(a);
-  const right = parseVersionForCompare(b);
-  for (let index = 0; index < 3; index += 1) {
-    if (left.parts[index] !== right.parts[index]) return left.parts[index] - right.parts[index];
-  }
-  if (left.prerelease === right.prerelease) return 0;
-  if (!left.prerelease) return 1;
-  if (!right.prerelease) return -1;
-  return left.prerelease.localeCompare(right.prerelease);
-}
-
-function parseVersionForCompare(value: string) {
-  const normalized = normalizeVersion(value);
-  const [versionPart, prerelease = ""] = normalized.split("-", 2);
-  const parts = versionPart
-    .split(".")
-    .map((part) => Number.parseInt(part, 10))
-    .map((part) => (Number.isFinite(part) ? part : 0));
-  return {
-    parts: [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0],
-    prerelease,
-  };
+  window.open(downloadPageUrl, "_blank", "noopener,noreferrer");
 }
 
 function forceLoadLatestSamplePortfolio() {
@@ -652,19 +509,22 @@ function OnboardingDialog({
 function AboutDialog({
   open,
   onOpenChange,
+  onDownloadPageOpen,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDownloadPageOpen: () => void;
 }) {
   const handleCheckUpdates = (event: MouseEvent<HTMLAnchorElement>) => {
-    const isTauri = "__TAURI_INTERNALS__" in window;
-    if (isTauri) event.preventDefault();
+    const isTauri = isTauriRuntime();
+    event.preventDefault();
+    if (isTauri) {
+      void openDownloadPage();
+    } else {
+      window.open(downloadPageUrl, "_blank", "noopener,noreferrer");
+    }
     onOpenChange(false);
-    window.dispatchEvent(
-      new CustomEvent("mitru-check-updates", {
-        detail: { skipOpenReleasePage: !isTauri, simpleFeedback: true },
-      }),
-    );
+    onDownloadPageOpen();
   };
 
   return (
@@ -717,12 +577,12 @@ function AboutDialog({
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-white">アプリの更新</p>
                   <p className="mt-1 text-xs leading-5 text-slate-300">
-                    現在のバージョンとGitHub Releasesの最新版を確認します。
+                    特設サイトのダウンロードページで最新版を確認します。
                   </p>
                 </div>
               </div>
               <Button asChild className="mt-4 w-full gap-2 bg-emerald-400 text-emerald-950 hover:bg-emerald-300">
-                <a href={githubLatestReleaseUrl} target="_blank" rel="noreferrer" onClick={handleCheckUpdates}>
+                <a href={downloadPageUrl} target="_blank" rel="noreferrer" onClick={handleCheckUpdates}>
                   <ExternalLink className="size-4" />
                   更新を確認
                 </a>

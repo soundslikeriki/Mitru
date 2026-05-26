@@ -35,7 +35,7 @@ console.log(`[tauri-build] script-version=${SCRIPT_VERSION} platform=${platform}
 /**
  * Tauri CLI をプロジェクト内 node_modules/.bin から直接呼ぶ。
  *
- * @param {string[]} tauriArgs 例: ["build", "--bundles", "nsis,msi"]
+ * @param {string[]} tauriArgs 例: ["build", "--bundles", "nsis"]
  * @returns {number} 終了コード
  */
 function runTauri(tauriArgs) {
@@ -110,8 +110,8 @@ function buildWindows() {
 
   const tauriBin = path.join(projectRoot, "node_modules", ".bin", "tauri.cmd");
 
-  console.log("[tauri-build] Windowsビルドを開始します (bundles=nsis,msi)");
-  console.log(`[tauri-build] 実行: "${tauriBin}" build --bundles nsis,msi`);
+  console.log("[tauri-build] Windowsビルドを開始します (bundles=nsis)");
+  console.log(`[tauri-build] 実行: "${tauriBin}" build --bundles nsis`);
 
   if (!fs.existsSync(tauriBin)) {
     console.error("❌ Windowsビルド失敗: Tauri CLI のバイナリが見つかりません。");
@@ -121,7 +121,7 @@ function buildWindows() {
   }
 
   try {
-    execSync(`"${tauriBin}" build --bundles nsis,msi`, {
+    execSync(`"${tauriBin}" build --bundles nsis`, {
       stdio: "inherit",
       shell: true,
       cwd: projectRoot,
@@ -149,7 +149,7 @@ switch (target) {
       exitCode = buildMac();
       if (exitCode === 0) {
         console.error("[tauri-build] tauri:build:all はこの環境だけでは完了しません。");
-        console.error("  Windows向け NSIS/MSI は Windows 環境で別途実行してください。");
+        console.error("  Windows向け NSIS は Windows 環境で別途実行してください。");
         // 片肺ビルドを「成功」と誤認させないため、敢えて非ゼロで終了する
         exitCode = 1;
       }

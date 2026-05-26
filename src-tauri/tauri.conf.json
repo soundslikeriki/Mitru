@@ -31,10 +31,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "app",
-      "dmg",
-      "nsis",
-      "msi"
+      "nsis"
     ],
     "category": "Business",
     "publisher": "Mitru",
@@ -83,9 +80,6 @@
         "displayLanguageSelector": false,
         "compression": "lzma",
         "startMenuFolder": "Mitru"
-      },
-      "wix": {
-        "language": "ja-JP"
       }
     }
   }
