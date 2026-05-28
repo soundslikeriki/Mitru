@@ -16,15 +16,15 @@ import {
 import { isProtectedMaster } from "@/stores/slices/master-slice";
 
 const requiredFieldsMessage = "未入力の情報があります。すべての必須項目を入力してください。";
+const workItemMastersInitializedKey = "mitru-work-item-masters-initialized-v1";
+const workItemMastersUserManagedKey = "mitru-work-item-masters-user-managed-v1";
 const workMasterGridClass = "grid-cols-[44px_minmax(280px,1fr)_96px_140px_128px_128px_88px_132px]";
 const materialMasterGridClass = "grid-cols-[44px_minmax(260px,1fr)_148px_148px_minmax(220px,1fr)_88px_128px_132px]";
 
 export function WorkItemMasterSection() {
   const masters = useProjectStore((state) => state.workItemMasters);
-  const clearWorkItemMasters = useProjectStore((state) => state.clearWorkItemMasters);
   const createWorkItemMaster = useProjectStore((state) => state.createWorkItemMaster);
   const deleteWorkItemMaster = useProjectStore((state) => state.deleteWorkItemMaster);
-  const resetWorkItemMasterCosts = useProjectStore((state) => state.resetWorkItemMasterCosts);
   const toggleWorkItemMasterFavorite = useProjectStore((state) => state.toggleWorkItemMasterFavorite);
   const [category, setCategory] = useState("すべて");
   const [editingMaster, setEditingMaster] = useState<WorkItemMaster | null>(null);
@@ -33,95 +33,20 @@ export function WorkItemMasterSection() {
   const categories = useMemo(() => ["すべて", ...workMasterCategoryOrder], []);
 
   useEffect(() => {
-    if (!localStorage.getItem("mitru-work-master-hard-reset-v1")) {
-      clearWorkItemMasters();
-      localStorage.setItem("mitru-work-master-hard-reset-v1", "done");
-    }
+    const userManaged = localStorage.getItem(workItemMastersUserManagedKey) === "done";
     const currentMasters = useProjectStore.getState().workItemMasters;
-    const keys = new Set(currentMasters.map((master) => workMasterKey(master)));
-    temporaryWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!keys.has(key)) {
-        createWorkItemMaster(input);
+    if (!localStorage.getItem(workItemMastersInitializedKey)) {
+      if (currentMasters.length === 0 || isBundledInitialWorkItemSeed(currentMasters)) {
+        seedMissingWorkItemMasters(getDefaultWorkItemMasterInputs(), createWorkItemMaster);
       }
-    });
-    const latestMasters = useProjectStore.getState().workItemMasters;
-    const latestKeys = new Set(latestMasters.map((master) => workMasterKey(master)));
-    woodWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!latestKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const electricalMasters = useProjectStore.getState().workItemMasters;
-    const electricalKeys = new Set(electricalMasters.map((master) => workMasterKey(master)));
-    electricalWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!electricalKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const plumbingMasters = useProjectStore.getState().workItemMasters;
-    const plumbingKeys = new Set(plumbingMasters.map((master) => workMasterKey(master)));
-    plumbingWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!plumbingKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const finishMasters = useProjectStore.getState().workItemMasters;
-    const finishKeys = new Set(finishMasters.map((master) => workMasterKey(master)));
-    fixturePlasterTileWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!finishKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const exteriorMasters = useProjectStore.getState().workItemMasters;
-    const exteriorKeys = new Set(exteriorMasters.map((master) => workMasterKey(master)));
-    paintWaterproofExteriorWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!exteriorKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const structureMasters = useProjectStore.getState().workItemMasters;
-    const structureKeys = new Set(structureMasters.map((master) => workMasterKey(master)));
-    exteriorFoundationDemolitionWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!structureKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const remainingMasters = useProjectStore.getState().workItemMasters;
-    const remainingKeys = new Set(remainingMasters.map((master) => workMasterKey(master)));
-    remainingWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!remainingKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const steelMasters = useProjectStore.getState().workItemMasters;
-    const steelKeys = new Set(steelMasters.map((master) => workMasterKey(master)));
-    steelWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!steelKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
-    const otherMasters = useProjectStore.getState().workItemMasters;
-    const otherKeys = new Set(otherMasters.map((master) => workMasterKey(master)));
-    otherWorkItemMasterInputs.forEach((input) => {
-      const key = workMasterKey(input);
-      if (!otherKeys.has(key)) {
-        createWorkItemMaster(input);
-      }
-    });
+      localStorage.setItem(workItemMastersInitializedKey, "done");
+    } else if (!userManaged && getInteriorWorkItemMasterCount(currentMasters) === 0) {
+      seedMissingWorkItemMasters(getDefaultInteriorWorkItemMasterInputs(), createWorkItemMaster);
+    }
     if (!localStorage.getItem("mitru-work-master-cost-zero-v1")) {
-      resetWorkItemMasterCosts();
       localStorage.setItem("mitru-work-master-cost-zero-v1", "done");
     }
-  }, [clearWorkItemMasters, createWorkItemMaster, resetWorkItemMasterCosts]);
+  }, [createWorkItemMaster]);
   const filteredMasters = useMemo(() => {
     return masters.filter((master) => {
       const masterCategory = getWorkMasterCategory(master);
@@ -200,7 +125,10 @@ export function WorkItemMasterSection() {
             featured
             emptyMessage="星を付けた工事項目がここに表示されます。よく使う項目を素早く選べます。"
             onToggle={() => toggleCategory("よく使う項目")}
-            onFavorite={toggleWorkItemMasterFavorite}
+            onFavorite={(id) => {
+              markWorkItemMastersUserManaged();
+              toggleWorkItemMasterFavorite(id);
+            }}
             onEdit={(master) => {
               setEditingMaster(master);
               setDialogOpen(true);
@@ -211,6 +139,7 @@ export function WorkItemMasterSection() {
                 return;
               }
               if (confirmDestructive("工事項目マスタを削除します", `${master.majorCategory} / ${master.name} を削除します。この操作は元に戻せません。`)) {
+                markWorkItemMastersUserManaged();
                 deleteWorkItemMaster(master.id);
               }
             }}
@@ -223,7 +152,10 @@ export function WorkItemMasterSection() {
               items={group.items}
               open={searchActive || openCategories.has(group.label)}
               onToggle={() => toggleCategory(group.label)}
-              onFavorite={toggleWorkItemMasterFavorite}
+              onFavorite={(id) => {
+                markWorkItemMastersUserManaged();
+                toggleWorkItemMasterFavorite(id);
+              }}
               onEdit={(master) => {
                 setEditingMaster(master);
                 setDialogOpen(true);
@@ -234,6 +166,7 @@ export function WorkItemMasterSection() {
                   return;
                 }
                 if (confirmDestructive("工事項目マスタを削除します", `${master.majorCategory} / ${master.name} を削除します。この操作は元に戻せません。`)) {
+                  markWorkItemMastersUserManaged();
                   deleteWorkItemMaster(master.id);
                 }
               }}
@@ -685,6 +618,7 @@ function WorkItemMasterDialog({
       ...form,
       middleCategory: form.middleCategory.trim(),
     };
+    markWorkItemMastersUserManaged();
     if (master) {
       updateWorkItemMaster(master.id, normalizedForm);
     } else {
@@ -1018,6 +952,50 @@ const otherWorkItemMasterInputs: WorkItemMasterInput[] = [
   workMasterInput("残材処理工事", "残材処理工事", "その他"),
   workMasterInput("運搬工事", "運搬工事", "その他"),
 ];
+
+function getDefaultWorkItemMasterInputs() {
+  return [
+    ...getDefaultInteriorWorkItemMasterInputs(),
+    ...temporaryWorkItemMasterInputs,
+    ...woodWorkItemMasterInputs,
+    ...electricalWorkItemMasterInputs,
+    ...plumbingWorkItemMasterInputs,
+    ...fixturePlasterTileWorkItemMasterInputs,
+    ...paintWaterproofExteriorWorkItemMasterInputs,
+    ...exteriorFoundationDemolitionWorkItemMasterInputs,
+    ...remainingWorkItemMasterInputs,
+    ...steelWorkItemMasterInputs,
+    ...otherWorkItemMasterInputs,
+  ];
+}
+
+function getDefaultInteriorWorkItemMasterInputs() {
+  return interiorWorkItemMasterInputs.map((input, index) => ({ ...input, favorite: index < 6 }));
+}
+
+function seedMissingWorkItemMasters(
+  inputs: WorkItemMasterInput[],
+  createWorkItemMaster: (input: WorkItemMasterInput) => WorkItemMaster,
+) {
+  inputs.forEach((input) => {
+    const currentMasters = useProjectStore.getState().workItemMasters;
+    const exists = currentMasters.some((master) => workMasterKey(master) === workMasterKey(input));
+    if (!exists) createWorkItemMaster(input);
+  });
+}
+
+function getInteriorWorkItemMasterCount(masters: WorkItemMaster[]) {
+  return masters.filter((master) => master.majorCategory === "内装工事").length;
+}
+
+function markWorkItemMastersUserManaged() {
+  localStorage.setItem(workItemMastersUserManagedKey, "done");
+}
+
+function isBundledInitialWorkItemSeed(masters: WorkItemMaster[]) {
+  if (masters.length !== interiorWorkItemMasterInputs.length) return false;
+  return masters.every((master) => master.id.startsWith("master-interior-"));
+}
 
 function workMasterInput(itemName: string, name = itemName, majorCategory = "内装工事"): WorkItemMasterInput {
   return {

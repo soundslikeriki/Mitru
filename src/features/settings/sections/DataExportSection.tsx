@@ -11,13 +11,9 @@ import {
 } from "@/features/settings/lib/settings-utils";
 import { ToastMessage } from "@/features/shared/ToastMessage";
 import { useProjectStore } from "@/stores/project-store";
-import {
-  defaultDocumentNumberSettings,
-  defaultTaxSettings,
-  initialCompanyInfo,
-  initialPdfTemplateSettings,
-} from "@/stores/defaults";
 import { projectStoreVersion } from "@/stores/slices/persist";
+
+const sampleDataRemovedKey = "mitru-sample-data-removed-v1";
 
 export function DataExportSection() {
   const navigate = useNavigate();
@@ -32,12 +28,12 @@ export function DataExportSection() {
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
   const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
   const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const cloudSyncSettings = useProjectStore((state) => state.cloudSyncSettings);
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
   const documentNumberSettings = useProjectStore((state) => state.documentNumberSettings);
   const exportBackupData = useProjectStore((state) => state.exportBackupData);
-  const resetBusinessDataKeepingMasters = useProjectStore((state) => state.resetBusinessDataKeepingMasters);
   const [busy, setBusy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
@@ -112,17 +108,37 @@ export function DataExportSection() {
     }
   };
 
-  const resetBusinessData = async () => {
+  const resetBusinessData = async (withBackup: boolean) => {
+    setBusy(true);
     try {
-      const backup = exportBackupData();
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const resetAt = new Date().toISOString();
-      await downloadTextFile(
-        `mitru_reset_backup_${timestamp}.json`,
-        JSON.stringify(backup, null, 2),
-        "application/json;charset=utf-8",
-      );
-      resetBusinessDataKeepingMasters();
+      if (withBackup) {
+        const backup = exportBackupData();
+        const timestamp = resetAt.replace(/[:.]/g, "-");
+        await downloadTextFile(
+          `mitru_reset_backup_${timestamp}.json`,
+          JSON.stringify(backup, null, 2),
+          "application/json;charset=utf-8",
+        );
+      }
+
+      useProjectStore.setState({
+        customers: [],
+        projects: [],
+        projectItems: [],
+        calculationTemplates: [],
+        costSettingsByProjectId: {},
+        quoteSettingsByProjectId: {},
+        invoiceSettingsByProjectId: {},
+        invoiceItemsByItemId: {},
+        sealSettingsByProjectId: {},
+        estimateDocuments: [],
+        invoiceDocuments: [],
+        deliveryDocuments: [],
+        orderDocuments: [],
+        billingCloseRecords: [],
+        lastBackupAt: resetAt,
+      });
       localStorage.setItem(
         "mitru-local-store",
         JSON.stringify({
@@ -130,6 +146,7 @@ export function DataExportSection() {
             customers: [],
             projects: [],
             projectItems: [],
+            calculationTemplates: [],
             workItemMasters,
             materialMasters,
             costSettingsByProjectId: {},
@@ -142,26 +159,30 @@ export function DataExportSection() {
             deliveryDocuments: [],
             orderDocuments: [],
             billingCloseRecords: [],
-            companyInfo: initialCompanyInfo,
-            pdfTemplateSettings: initialPdfTemplateSettings,
-            taxSettings: defaultTaxSettings,
-            documentNumberSettings: defaultDocumentNumberSettings,
+            companyInfo,
+            pdfTemplateSettings,
+            taxSettings,
+            cloudSyncSettings,
+            documentNumberSettings,
             lastBackupAt: resetAt,
           },
           version: projectStoreVersion,
         }),
       );
+      localStorage.setItem(sampleDataRemovedKey, "done");
       localStorage.removeItem("mitru-onboarding-completed");
       localStorage.setItem("mitru-business-data-reset-at", resetAt);
       window.dispatchEvent(new Event("mitru-onboarding-open"));
       navigate("/settings", { replace: true });
       setResetOpen(false);
       notify(
-        "案件データをリセットしました",
-        "工事項目マスタと材料マスタは保持したまま、案件・顧客・書類データを削除しました。",
+        withBackup ? "バックアップしてリセットしました" : "バックアップせずにリセットしました",
+        "サンプルを含む案件・顧客・積算明細・書類データを削除しました。マスタ、会社情報、ロゴ、社判、設定は保持しています。",
       );
     } catch (error) {
       notify("リセットに失敗しました", error instanceof Error ? error.message : "不明なエラー", "error");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -218,11 +239,11 @@ export function DataExportSection() {
             </div>
             <div>
               <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                案件データ・書類データをすべてリセット（マスタは保持）
+                業務データをリセット（サンプル含む）
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-400">
-                案件、積算、見積書、請求書、納品書、注文書、顧客データを削除します。
-                工事項目マスタと材料マスタだけを保持し、会社情報やロゴ・社判も空に戻します。
+                案件、顧客、積算明細、見積書、請求書、入金記録、納品書、注文書、請求締めなどの業務データを削除します。
+                工事項目マスタ、材料マスタ、会社情報、ロゴ、社判、アプリ設定、クラウド同期設定は保持されます。
               </p>
             </div>
           </div>
@@ -248,24 +269,45 @@ export function DataExportSection() {
         </div>
       )}
       <Dialog open={resetOpen} onOpenChange={setResetOpen}>
-        <DialogContent className="border-white/10 bg-white text-slate-950 shadow-2xl dark:bg-slate-950 dark:text-white sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>案件データ・書類データをリセットしますか？</DialogTitle>
-            <DialogDescription className="leading-7 text-slate-600 dark:text-slate-400">
-              工事項目マスタと材料マスタは保持されます。会社情報を含む他の全データが削除されます。よろしいですか？
-              実行前に現在の全データをJSONで自動バックアップします。
+        <DialogContent
+          overlayClassName="z-[2147483647]"
+          className="z-[2147483647] left-1/2 top-1/2 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto border-white/10 bg-white p-5 text-slate-950 shadow-2xl dark:bg-slate-950 dark:text-white sm:max-w-2xl sm:p-6"
+        >
+          <DialogHeader className="pr-7">
+            <DialogTitle className="break-words">業務データをリセットしますか？</DialogTitle>
+            <DialogDescription className="break-words leading-7 text-slate-600 dark:text-slate-400">
+              サンプルを含む案件、顧客、積算明細、見積書、請求書、入金記録、納品書、注文書、請求締めデータを削除します。
+              工事項目マスタ、材料マスタ、会社情報、ロゴ、社判、アプリ設定、クラウド同期設定は保持されます。
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
-            削除対象: 会社情報、ロゴ、社判、案件、積算データ、見積書、請求書、納品書、注文書、顧客データ、進行管理データ
+          <div className="break-words rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
+            バックアップせずにリセットすると、削除した業務データは元に戻せません。迷う場合はJSONバックアップを作成してから実行してください。
           </div>
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setResetOpen(false)}>
+          <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button
+              variant="outline"
+              className="min-h-11 whitespace-normal px-5 text-center sm:min-w-[120px]"
+              onClick={() => setResetOpen(false)}
+            >
               キャンセル
             </Button>
-            <Button className="bg-rose-600 text-white hover:bg-rose-700" onClick={resetBusinessData}>
-              バックアップしてリセット
-            </Button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                className="min-h-11 whitespace-normal border-rose-300 px-5 text-center text-rose-700 hover:bg-rose-50 dark:border-rose-400/40 dark:text-rose-200 dark:hover:bg-rose-400/10 sm:min-w-[200px]"
+                onClick={() => resetBusinessData(false)}
+                disabled={busy}
+              >
+                バックアップせずにリセット
+              </Button>
+              <Button
+                className="min-h-11 whitespace-normal bg-rose-600 px-6 text-center text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700 sm:min-w-[230px]"
+                onClick={() => resetBusinessData(true)}
+                disabled={busy}
+              >
+                JSONバックアップしてリセット
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

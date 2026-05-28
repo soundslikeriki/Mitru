@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, Cloud, ExternalLink, Eye, EyeOff, Loader2, LogOut, PlugZap, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Cloud, Copy, ExternalLink, Eye, EyeOff, FileText, Loader2, LogOut, PlugZap, RefreshCw, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cloudSyncFeatureEnabled } from "@/lib/feature-flags";
 import { testSupabaseConnection } from "@/lib/supabase";
 import { useSupabaseAuth } from "@/hooks/useSupabaseAuth";
 import { useProjectStore, type CloudSyncSettings } from "@/stores/project-store";
 import { ToastMessage, type ToastState } from "@/features/shared/ToastMessage";
+import supabaseSchemaSql from "../../../../docs/supabase-schema.sql?raw";
 
 type ConnectionStatus = "idle" | "testing" | "success" | "partial" | "error";
 
@@ -40,6 +42,7 @@ export function CloudSyncSection() {
   const [authMessage, setAuthMessage] = useState("");
   const [initialSyncDialogOpen, setInitialSyncDialogOpen] = useState(false);
   const [initialSyncPromptDismissed, setInitialSyncPromptDismissed] = useState(false);
+  const [schemaSqlOpen, setSchemaSqlOpen] = useState(false);
   const {
     isLoading: isAuthLoading,
     signIn,
@@ -155,6 +158,43 @@ export function CloudSyncSection() {
       });
     } finally {
       window.setTimeout(() => setToast(null), 4200);
+    }
+  };
+
+  const handleCopySchemaSql = async () => {
+    try {
+      await navigator.clipboard.writeText(supabaseSchemaSql);
+      setToast({
+        title: "SQLをコピーしました",
+        description: "SupabaseのSQL Editorに貼り付けて実行してください。",
+      });
+    } catch {
+      setToast({
+        title: "SQLを自動コピーできませんでした",
+        description: "コピーできない場合はSQL本文を選択してコピーしてください。",
+        tone: "error",
+      });
+    } finally {
+      window.setTimeout(() => setToast(null), 4200);
+    }
+  };
+
+  const handleOpenSupabaseGuide = async () => {
+    const url = "https://supabase.com/docs/guides/getting-started";
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+      return;
+    } catch {
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        setToast({
+          title: "Supabaseの始め方を開けませんでした",
+          description: "ブラウザで https://supabase.com/docs/guides/getting-started を開いてください。",
+          tone: "error",
+        });
+        window.setTimeout(() => setToast(null), 5200);
+      }
     }
   };
 
@@ -300,9 +340,10 @@ export function CloudSyncSection() {
             <h3 className="mt-2 text-lg font-semibold text-white">クラウド同期</h3>
             <div className="mt-2 grid max-w-3xl gap-1.5 text-sm leading-6 text-slate-400">
               <p>Mitruはオフラインでもそのまま利用できます。</p>
-              <p>クラウド同期を有効にした場合のみ、案件・顧客・見積書・請求書・入金記録を同期します。</p>
+              <p>クラウド同期を有効にした場合のみ、案件・顧客・見積書・請求書・入金記録を確認・同期します。</p>
               <p>同期先は、ユーザー自身で用意したSupabase環境です。</p>
-              <p>積算明細は、このベータ版のクラウド同期対象外です。</p>
+              <p>必要なときに手動で同期できます。同期OFFなら完全オフラインで動作します。</p>
+              <p>積算明細、納品書、注文書などは、このベータ版のクラウド同期対象外です。</p>
             </div>
             <div className="mt-3 grid w-full gap-1.5 rounded-xl border-2 border-red-400 bg-red-50 px-4 py-3 text-sm leading-5 text-red-950 shadow-sm shadow-red-950/10 dark:border-red-400/70 dark:bg-red-500/[0.14] dark:text-red-100">
               <p className="font-semibold">クラウド同期は実験的機能です。データ消失の可能性があります。</p>
@@ -311,7 +352,7 @@ export function CloudSyncSection() {
                 この端末は家族・社内で共有しないでください。Anon Keyが漏れると他人のデータが見える可能性があります。
               </p>
               <p className="mt-0.5 text-xs leading-4 text-red-900 dark:text-red-100/85">
-                ※積算明細（projectItems）は現在クラウド同期対象外です。別端末では積算内容を再入力する必要があります。積算明細を含む完全な退避には「データ出力」を使用してください。
+                ※積算明細（projectItems）、納品書、注文書などは現在クラウド同期対象外です。別端末では積算内容を再入力する必要があります。積算明細を含む完全な退避には「データ出力」を使用してください。
               </p>
             </div>
           </div>
@@ -476,7 +517,7 @@ export function CloudSyncSection() {
           </div>
           <div className="mt-3 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
             <span>最終同期: {relativeSyncTime(draft.lastSyncAt)}</span>
-            <span>次回自動同期: アプリ起動時</span>
+            <span>同期方法: 必要に応じて手動同期</span>
           </div>
         </div>
 
@@ -486,24 +527,24 @@ export function CloudSyncSection() {
             ユーザー自身のSupabaseプロジェクトURLとAnon Keyを入力してください。クラウド同期を使わない場合、Mitruは完全にローカルアプリとして動作します。
           </p>
           <div className="mt-2 flex flex-wrap gap-3">
-            <a
-              href="/docs/supabase-schema.sql"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 shadow-sm hover:bg-emerald-100 dark:border-emerald-400/25 dark:bg-emerald-400/[0.08] dark:text-emerald-200 dark:hover:bg-emerald-400/[0.14]"
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 gap-2 border-emerald-400/25 bg-emerald-400/[0.08] px-3 text-sm text-emerald-200 hover:bg-emerald-400/[0.14]"
+              onClick={() => setSchemaSqlOpen(true)}
             >
-              Supabaseテーブル作成SQLはこちら
-              <ExternalLink className="size-3.5" />
-            </a>
-            <a
-              href="https://supabase.com/docs/guides/getting-started"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 px-1.5 py-1.5 text-sm font-medium text-emerald-300 hover:text-emerald-200"
+              <FileText className="size-4" />
+              Supabaseテーブル作成SQLを表示
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-9 gap-2 px-2 text-sm font-medium text-emerald-300 hover:bg-emerald-400/[0.08] hover:text-emerald-200"
+              onClick={handleOpenSupabaseGuide}
             >
               Supabaseの始め方を見る
               <ExternalLink className="size-3.5" />
-            </a>
+            </Button>
           </div>
         </div>
 
@@ -536,16 +577,16 @@ export function CloudSyncSection() {
 
         <div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs">
           <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.08] px-2 py-3">
-            <div className="text-lg font-semibold text-emerald-200">{syncSummary.success}</div>
-            <div className="mt-1 text-emerald-100/80">成功</div>
+            <div className="text-lg font-semibold text-emerald-800 dark:text-emerald-200">{syncSummary.success}</div>
+            <div className="mt-1 font-medium text-emerald-700 dark:text-emerald-100/80">成功</div>
           </div>
           <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.08] px-2 py-3">
-            <div className="text-lg font-semibold text-amber-200">{syncSummary.skipped}</div>
-            <div className="mt-1 text-amber-100/80">未実行</div>
+            <div className="text-lg font-semibold text-amber-800 dark:text-amber-200">{syncSummary.skipped}</div>
+            <div className="mt-1 font-medium text-amber-700 dark:text-amber-100/80">未実行</div>
           </div>
           <div className="rounded-xl border border-red-400/20 bg-red-400/[0.08] px-2 py-3">
-            <div className="text-lg font-semibold text-red-200">{syncSummary.error}</div>
-            <div className="mt-1 text-red-100/80">失敗</div>
+            <div className="text-lg font-semibold text-rose-800 dark:text-red-200">{syncSummary.error}</div>
+            <div className="mt-1 font-medium text-rose-700 dark:text-red-100/80">失敗</div>
           </div>
         </div>
 
@@ -675,6 +716,36 @@ export function CloudSyncSection() {
           }}
         />
       ) : null}
+      <Dialog open={schemaSqlOpen} onOpenChange={setSchemaSqlOpen}>
+        <DialogContent
+          overlayClassName="z-[2147483647]"
+          className="z-[2147483647] max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[920px] overflow-hidden p-0 md:left-[calc(280px+((100vw-280px)/2))] md:w-[calc(100vw-312px)]"
+        >
+          <div className="flex max-h-[calc(100vh-2rem)] max-h-[calc(100dvh-2rem)] min-h-0 flex-col gap-4 p-5 sm:p-6">
+            <DialogHeader className="shrink-0 pr-8">
+              <DialogTitle>Supabaseテーブル作成SQL</DialogTitle>
+              <DialogDescription>
+                SupabaseのSQL Editorに以下のSQLを貼り付けて実行してください。クラウド同期を使わない場合、この設定は不要です。
+              </DialogDescription>
+            </DialogHeader>
+            <div className="shrink-0 rounded-xl border border-amber-400/30 bg-amber-400/[0.08] px-4 py-3 text-sm leading-6 text-amber-100">
+              SQLの実行はユーザー自身のSupabaseプロジェクトで行ってください。Mitruにservice_role keyは入力しないでください。
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-slate-400">
+                `docs/supabase-schema.sql` と同じ内容をアプリ内で表示しています。
+              </p>
+              <Button type="button" className="gap-2" onClick={handleCopySchemaSql}>
+                <Copy className="size-4" />
+                SQLをコピー
+              </Button>
+            </div>
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre rounded-xl border border-white/10 bg-slate-950/80 p-4 text-xs leading-5 text-slate-200">
+              <code className="block min-w-max whitespace-pre">{supabaseSchemaSql}</code>
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
       <ToastMessage toast={toast} onClose={() => setToast(null)} />
     </motion.section>
   );

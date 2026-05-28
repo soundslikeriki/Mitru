@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertTriangle, FileText, PackageCheck, ReceiptText, ShoppingCart } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, FileText, PackageCheck, ReceiptText, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/features/calculation/lib/formatting";
@@ -96,7 +96,7 @@ export function ProjectProgress({ project }: { project: Project }) {
               </span>
             </div>
           </div>
-          <div className="inline-flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-3">
             <ContextHelp
               title="進行管理の使い方"
               description="案件の状態、次回対応、書類発行状況、利益リスクを一画面で確認するためのタブです。"
@@ -107,16 +107,7 @@ export function ProjectProgress({ project }: { project: Project }) {
                 "粗利率が30%未満で黄色、25%未満で赤色の警告が出ます。",
               ]}
             />
-            {workflowStatuses.map((status) => (
-              <button
-                key={status}
-                type="button"
-                onClick={() => confirmStatusChange(status)}
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition hover:-translate-y-0.5 hover:shadow-sm ${projectStatusClass(status, project.status === status)}`}
-              >
-                {status}
-              </button>
-            ))}
+            <ProjectStatusDropdown currentStatus={project.status} onChange={confirmStatusChange} />
           </div>
         </div>
 
@@ -229,6 +220,68 @@ export function ProjectProgress({ project }: { project: Project }) {
         </div>
       </section>
     </motion.section>
+  );
+}
+
+function ProjectStatusDropdown({
+  currentStatus,
+  onChange,
+}: {
+  currentStatus: ProjectStatus;
+  onChange: (status: ProjectStatus) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="relative min-w-[13rem]"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 dark:text-slate-500">
+        進行状況
+      </p>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-300 bg-white px-3 text-left shadow-sm transition hover:border-emerald-400 hover:bg-emerald-50 focus:outline-none focus:ring-3 focus:ring-emerald-400/20 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-emerald-400/35 dark:hover:bg-white/[0.07]"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${projectStatusClass(currentStatus, true)}`}>
+          {currentStatus}
+        </span>
+        <ChevronDown className={`size-4 shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open ? (
+        <div
+          className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl shadow-slate-950/12 dark:border-white/10 dark:bg-slate-950 dark:shadow-black/35"
+          role="listbox"
+          aria-label="進行状況を選択"
+        >
+          {workflowStatuses.map((status) => {
+            const selected = status === currentStatus;
+            return (
+              <button
+                key={status}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  setOpen(false);
+                  onChange(status);
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-xs font-semibold transition hover:translate-x-0.5 ${projectStatusClass(status, selected)}`}
+              >
+                <span>{status}</span>
+                {selected ? <Check className="size-4" /> : null}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

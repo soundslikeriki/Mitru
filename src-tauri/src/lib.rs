@@ -2,8 +2,13 @@ use std::{
     fs,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::Manager;
+use tauri::{Emitter, LogicalSize, Manager};
 use tauri_plugin_shell::ShellExt;
+
+const PRINT_PREVIEW_WIDTH: f64 = 1280.0;
+const PRINT_PREVIEW_HEIGHT: f64 = 960.0;
+const PRINT_PREVIEW_MIN_WIDTH: f64 = 1000.0;
+const PRINT_PREVIEW_MIN_HEIGHT: f64 = 720.0;
 
 #[tauri::command]
 #[allow(dead_code)]
@@ -25,14 +30,35 @@ async fn open_print_preview(
         .map_err(|_| "印刷プレビュー用HTMLのURL作成に失敗しました".to_string())?;
     let label = format!("print-preview-{timestamp}");
 
-    tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(url))
+    let cleanup_path = file_path.clone();
+    let preview_window = tauri::WebviewWindowBuilder::new(&app, label, tauri::WebviewUrl::External(url))
         .title(title)
-        .inner_size(900.0, 1120.0)
-        .min_inner_size(720.0, 840.0)
+        .inner_size(PRINT_PREVIEW_WIDTH, PRINT_PREVIEW_HEIGHT)
+        .min_inner_size(PRINT_PREVIEW_MIN_WIDTH, PRINT_PREVIEW_MIN_HEIGHT)
         .resizable(true)
         .center()
         .build()
         .map_err(|error| error.to_string())?;
+
+    preview_window
+        .set_min_size(Some(LogicalSize::new(
+            PRINT_PREVIEW_MIN_WIDTH,
+            PRINT_PREVIEW_MIN_HEIGHT,
+        )))
+        .map_err(|error| error.to_string())?;
+    preview_window
+        .set_size(LogicalSize::new(
+            PRINT_PREVIEW_WIDTH,
+            PRINT_PREVIEW_HEIGHT,
+        ))
+        .map_err(|error| error.to_string())?;
+    preview_window.center().map_err(|error| error.to_string())?;
+
+    preview_window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            let _ = fs::remove_file(&cleanup_path);
+        }
+    });
 
     Ok(())
 }
@@ -78,6 +104,25 @@ async fn close_current_window(window: tauri::WebviewWindow) -> Result<(), String
 }
 
 #[tauri::command]
+async fn emit_print_preview_event(
+    app: tauri::AppHandle,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    let event_type = payload
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "印刷プレビューイベントのtypeが不正です".to_string())?;
+
+    match event_type {
+        "mitru-seal-settings-save" | "mitru-print-preview-export-pdf" => {}
+        _ => return Err("許可されていない印刷プレビューイベントです".to_string()),
+    }
+
+    app.emit("mitru-print-preview-event", payload)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 #[allow(deprecated)]
 fn open_web_search(app: tauri::AppHandle, query: String) -> Result<(), String> {
     let trimmed = query.trim();
@@ -118,6 +163,7 @@ pub fn run() {
             open_print_preview,
             close_print_preview,
             close_current_window,
+            emit_print_preview_event,
             open_web_search
         ])
         .run(tauri::generate_context!())

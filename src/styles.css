@@ -48,21 +48,21 @@
 
 .light {
   color-scheme: light;
-  --background: #f8fafc;
-  --foreground: #1e2937;
+  --background: #f6f8fb;
+  --foreground: #172033;
   --card: #ffffff;
-  --card-foreground: #1e2937;
+  --card-foreground: #172033;
   --popover: #ffffff;
-  --popover-foreground: #1e2937;
+  --popover-foreground: #172033;
   --primary: #10b981;
   --primary-foreground: #ffffff;
-  --secondary: #e2e8f0;
-  --secondary-foreground: #1e2937;
-  --muted: #e2e8f0;
+  --secondary: #eef2f7;
+  --secondary-foreground: #172033;
+  --muted: #eef2f7;
   --muted-foreground: #475569;
   --accent: #10b981;
   --accent-foreground: #ffffff;
-  --border: rgba(15, 23, 42, 0.12);
+  --border: rgba(15, 23, 42, 0.10);
   --input: rgba(15, 23, 42, 0.12);
 }
 
@@ -111,13 +111,27 @@ th {
 .light [class~="bg-slate-950/80"],
 .light [class~="bg-slate-950/90"],
 .light [class~="bg-slate-950/95"] {
-  background-color: rgba(255, 255, 255, 0.92) !important;
+  background-color: rgba(255, 255, 255, 0.94) !important;
 }
 
 .light [class~="bg-slate-950"] {
   background-color: #ffffff !important;
 }
 
+.light [class~="bg-slate-50"],
+.light [class~="bg-slate-100"],
+.light [class~="bg-gray-50"],
+.light [class~="bg-gray-100"] {
+  background-color: #f6f8fb !important;
+}
+
+.light [class~="bg-white/6"],
+.light [class~="bg-white/10"],
+.light [class~="bg-white/70"],
+.light [class~="bg-white/80"],
+.light [class~="bg-white/85"],
+.light [class~="bg-white/90"],
+.light [class~="bg-white/95"],
 .light [class~="bg-white/[0.02]"],
 .light [class~="bg-white/[0.025]"],
 .light [class~="bg-white/[0.03]"],
@@ -135,11 +149,15 @@ th {
   background-color: #ffffff !important;
 }
 
+.light [class~="border-slate-200"],
+.light [class~="border-slate-300"],
+.light [class~="border-gray-200"],
+.light [class~="border-gray-300"],
 .light [class~="border-white/10"],
 .light [class~="border-white/15"],
 .light [class~="border-white/20"],
 .light [class~="border-white/25"] {
-  border-color: rgba(15, 23, 42, 0.12) !important;
+  border-color: rgba(15, 23, 42, 0.10) !important;
 }
 
 .light [class~="text-white"],
@@ -156,6 +174,10 @@ th {
 .light [class~="text-slate-500"],
 .light [class~="text-slate-600"] {
   color: #64748b !important;
+}
+
+.light [class~="bg-emerald-600"][class~="text-white"] {
+  color: #ffffff !important;
 }
 
 .light [role="dialog"] {
@@ -245,10 +267,20 @@ th {
 }
 
 .light [role="tab"][data-state="active"] {
-  background-color: #1e40af !important;
+  background-color: #059669 !important;
   color: #ffffff !important;
-  border-color: #1e40af !important;
-  box-shadow: 0 10px 22px rgba(30, 64, 175, 0.22) !important;
+  border-color: #059669 !important;
+  box-shadow: 0 10px 22px rgba(5, 150, 105, 0.20) !important;
+}
+
+.light [class~="shadow-sm"],
+.light [class~="shadow-md"] {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
+}
+
+.light [class~="shadow-lg"],
+.light [class~="shadow-xl"] {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08) !important;
 }
 
 .light [class~="shadow-2xl"] {
@@ -375,6 +407,28 @@ select {
   background: linear-gradient(90deg, rgba(16, 185, 129, 0.72), rgba(30, 58, 138, 0.74));
   border: 2px solid rgba(15, 23, 42, 0.78);
   border-radius: 999px;
+}
+
+.light ::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.92);
+}
+
+.light ::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.42);
+  border-color: rgba(226, 232, 240, 0.92);
+}
+
+.light .mitru-table-scroll {
+  scrollbar-color: rgba(16, 185, 129, 0.45) rgba(226, 232, 240, 0.9);
+}
+
+.light .mitru-table-scroll::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.9);
+}
+
+.light .mitru-table-scroll::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.48);
+  border-color: rgba(226, 232, 240, 0.9);
 }
 
 @media (max-width: 768px) {

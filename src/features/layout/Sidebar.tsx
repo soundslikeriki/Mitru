@@ -87,8 +87,8 @@ function SidebarNav() {
               to={item.to}
               className={`group flex min-h-14 w-full items-center justify-between rounded-lg px-3 py-2 transition ${
                 active
-                  ? "bg-white text-slate-950 shadow-lg shadow-black/20"
-                  : "text-slate-400 hover:bg-white/[0.07] hover:text-white"
+                  ? "bg-emerald-50 text-slate-950 shadow-sm shadow-emerald-950/10 ring-1 ring-emerald-200 dark:bg-white dark:shadow-lg dark:shadow-black/20 dark:ring-0"
+                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/[0.07] dark:hover:text-white"
               }`}
             >
               <span className="flex min-w-0 items-center gap-3">
@@ -100,14 +100,14 @@ function SidebarNav() {
                 <span className="min-w-0 leading-none">
                   <span
                     className={`block truncate text-[10px] font-semibold uppercase tracking-[0.14em] ${
-                      active ? "text-slate-500" : "text-slate-500 group-hover:text-slate-300"
+                      active ? "text-slate-500" : "text-slate-500 group-hover:text-slate-700 dark:group-hover:text-slate-300"
                     }`}
                   >
                     {item.englishLabel}
                   </span>
                   <span
                     className={`mt-1 block truncate text-sm font-semibold ${
-                      active ? "text-slate-950" : "text-slate-300 group-hover:text-white"
+                      active ? "text-slate-950" : "text-slate-600 group-hover:text-slate-950 dark:text-slate-300 dark:group-hover:text-white"
                     }`}
                   >
                     {item.label}

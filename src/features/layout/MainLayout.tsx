@@ -13,11 +13,11 @@ export function MainLayout({
   resolvedTheme: "light" | "dark";
 }) {
   return (
-    <div className={`${resolvedTheme === "dark" ? "dark bg-[#0F172A] text-slate-100" : "light bg-slate-100 text-slate-950"} h-screen overflow-hidden transition-colors`}>
+    <div className={`${resolvedTheme === "dark" ? "dark bg-[#0F172A] text-slate-100" : "light bg-[#F6F8FB] text-slate-950"} h-screen overflow-hidden transition-colors`}>
       <div aria-hidden="true" className={`pointer-events-none fixed inset-0 transition-colors ${
         resolvedTheme === "dark"
           ? "bg-[radial-gradient(circle_at_18%_12%,rgba(16,185,129,0.16),transparent_30%),radial-gradient(circle_at_88%_8%,rgba(30,58,138,0.42),transparent_32%),linear-gradient(135deg,#0F172A_0%,#111827_52%,#07111F_100%)]"
-          : "bg-[radial-gradient(circle_at_18%_12%,rgba(16,185,129,0.13),transparent_30%),radial-gradient(circle_at_88%_8%,rgba(30,58,138,0.16),transparent_32%),linear-gradient(135deg,#F8FAFC_0%,#EEF2FF_50%,#ECFDF5_100%)]"
+          : "bg-[radial-gradient(circle_at_18%_12%,rgba(16,185,129,0.08),transparent_30%),radial-gradient(circle_at_88%_8%,rgba(30,58,138,0.08),transparent_32%),linear-gradient(135deg,#F8FAFC_0%,#F3F6FB_52%,#F1F7F4_100%)]"
       }`} />
       <div className="relative z-10 flex h-screen overflow-hidden">
         <DesktopSidebar onAboutOpen={onAboutOpen} />

@@ -46,15 +46,8 @@ import {
 const appVersion = "v0.9.7-beta (限定ベータ)";
 const downloadPageUrl = "https://mitru-app.vercel.app/";
 const localStorageWarningBytes = 4.5 * 1024 * 1024;
-const interiorMastersSeedKey = "mitru-interior-masters-seeded-v1";
-const essentialInteriorMasterNames = new Set([
-  "クッションフロア張り",
-  "長尺シート張り",
-  "塩ビタイル張り",
-  "クロス張り（標準）",
-  "ボード下地＋クロス",
-  "内部清掃・ハウスクリーニング",
-]);
+const workItemMastersInitializedKey = "mitru-work-item-masters-initialized-v1";
+const workItemMastersUserManagedKey = "mitru-work-item-masters-user-managed-v1";
 
 function App() {
   return (
@@ -192,36 +185,7 @@ function AppShell() {
   }, [resolvedTheme]);
 
   useEffect(() => {
-    const state = useProjectStore.getState();
-    const interiorMasters = state.workItemMasters.filter((item) => item.majorCategory === "内装工事");
-    const hasSeeded = localStorage.getItem(interiorMastersSeedKey) === "done";
-    const hasTooFewInteriorMasters = interiorMasters.length < defaultInteriorWorkItemMasterInputs.length;
-    const hasMissingEssentialInteriorMaster = defaultInteriorWorkItemMasterInputs.some(
-      (master) =>
-        essentialInteriorMasterNames.has(master.name) &&
-        !interiorMasters.some(
-          (item) =>
-            item.majorCategory === master.majorCategory &&
-            item.name === master.name,
-        ),
-    );
-    const mastersToEnsure =
-      interiorMasters.length === 0 || hasTooFewInteriorMasters
-        ? defaultInteriorWorkItemMasterInputs
-        : defaultInteriorWorkItemMasterInputs.filter((master) => essentialInteriorMasterNames.has(master.name));
-
-    if (!hasSeeded || interiorMasters.length === 0 || hasTooFewInteriorMasters || hasMissingEssentialInteriorMaster) {
-      mastersToEnsure.forEach((master) => {
-        const currentState = useProjectStore.getState();
-        const exists = currentState.workItemMasters.some(
-          (item) =>
-            item.majorCategory === master.majorCategory &&
-            item.name === master.name,
-        );
-        if (!exists) currentState.createWorkItemMaster(master);
-      });
-      localStorage.setItem(interiorMastersSeedKey, "done");
-    }
+    ensureInteriorWorkItemMastersForBrokenSeed();
     if (!localStorage.getItem("mitru-work-master-cost-zero-v1")) {
       useProjectStore.getState().resetWorkItemMasterCosts();
       localStorage.setItem("mitru-work-master-cost-zero-v1", "done");
@@ -313,22 +277,36 @@ function forceLoadLatestSamplePortfolio() {
     orderDocuments: state.orderDocuments.filter((document) => !sampleProjectIds.has(document.projectId)),
   }));
 
-  const currentState = useProjectStore.getState();
-  defaultInteriorWorkItemMasterInputs.forEach((master) => {
-    const exists = useProjectStore
-      .getState()
-      .workItemMasters.some(
-        (item) =>
-          item.majorCategory === master.majorCategory &&
-          item.middleCategory === master.middleCategory &&
-          item.name === master.name,
-      );
-    if (!exists) currentState.createWorkItemMaster(master);
-  });
 }
 
 function omitSampleProjectKeys<T>(record: Record<string, T>, sampleProjectIds: Set<string>) {
   return Object.fromEntries(Object.entries(record).filter(([projectId]) => !sampleProjectIds.has(projectId)));
+}
+
+function ensureInteriorWorkItemMastersForBrokenSeed() {
+  if (localStorage.getItem(workItemMastersUserManagedKey) === "done") return;
+
+  const currentState = useProjectStore.getState();
+  const interiorMasters = currentState.workItemMasters.filter((master) => master.majorCategory === "内装工事");
+  if (currentState.workItemMasters.length > 0 && interiorMasters.length > 0) return;
+
+  defaultInteriorWorkItemMasterInputs.forEach((master, index) => {
+    const latestState = useProjectStore.getState();
+    const exists = latestState.workItemMasters.some(
+      (item) =>
+        item.majorCategory === master.majorCategory &&
+        item.middleCategory === master.middleCategory &&
+        item.name === master.name &&
+        item.unit === master.unit,
+    );
+    if (!exists) {
+      latestState.createWorkItemMaster({
+        ...master,
+        favorite: index < 6,
+      });
+    }
+  });
+  localStorage.setItem(workItemMastersInitializedKey, "done");
 }
 
 async function migrateExistingInlineImagesToIndexedDb() {

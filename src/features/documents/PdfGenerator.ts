@@ -66,7 +66,7 @@ function paginateRowsByWeight<T>(rows: T[], getWeight: (row: T) => number, maxPa
 
 function estimateDocumentLineWeight(item: ProjectItem) {
   const label = formatDocumentWorkItemLabel(item);
-  const specification = formatDocumentSpecification(item);
+  const specification = formatDocumentSpecificationDetail(item);
   let weight = 1;
   if (label.length > 34 || specification.length > 22) weight += 1;
   if (label.length > 70 || specification.length > 48) weight += 1;
@@ -911,8 +911,7 @@ function buildQuotePdfHtml({
     const isLastPage = pageIndex === pages.length - 1;
     const rows = pageLines.map(({ item, line, unitPrice }) => `
       <tr>
-        <td><strong>${escapeHtml(formatDocumentWorkItemLabel(item))}</strong></td>
-        <td class="spec-cell">${escapeHtml(formatDocumentSpecification(item))}</td>
+        <td class="content-cell">${buildDocumentContentCell(item)}</td>
         <td class="right">${formatNumber(item.quantity)}${escapeHtml(item.unit)}</td>
         <td class="right">${formatCurrency(unitPrice)}</td>
         <td class="right strong">${formatCurrency(line.subtotal)}</td>
@@ -954,13 +953,13 @@ function buildQuotePdfHtml({
 
       <section class="amount-band">
         <span>御見積合計額（税込）</span>
-        <strong>${formatCurrency(displayTotal)}</strong>
+        <strong class="currency-amount ${getCurrencyAmountSizeClass(displayTotal)}">${formatCurrency(displayTotal)}</strong>
       </section>
 
       <table class="detail-table">
-        <colgroup><col style="width:40%" /><col style="width:19%" /><col style="width:13%" /><col style="width:14%" /><col style="width:14%" /></colgroup>
-        <thead><tr><th>工事項目</th><th>品番・仕様</th><th class="right">数量</th><th class="right">単価</th><th class="right">金額</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="empty">積算項目がありません</td></tr>`}</tbody>
+        <colgroup><col style="width:59%" /><col style="width:13%" /><col style="width:14%" /><col style="width:14%" /></colgroup>
+        <thead><tr><th>内容</th><th class="right">数量</th><th class="right">単価</th><th class="right">金額</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="empty">積算項目がありません</td></tr>`}</tbody>
       </table>
 
       ${isLastPage ? `
@@ -1021,8 +1020,7 @@ function buildInvoicePdfHtml({
     const isLastPage = pageIndex === pages.length - 1;
     const rows = pageLines.map((line) => `
       <tr>
-        <td><strong>${escapeHtml(formatDocumentWorkItemLabel(line.item))}</strong></td>
-        <td class="spec-cell">${escapeHtml(formatDocumentSpecification(line.item))}</td>
+        <td class="content-cell">${buildDocumentContentCell(line.item)}</td>
         <td class="right">${formatNumber(line.item.quantity)}${escapeHtml(line.item.unit)}</td>
         <td class="right">${formatCurrency(line.item.quantity > 0 ? line.line.subtotal / line.item.quantity : line.line.subtotal)}</td>
         <td class="right strong">${formatCurrency(line.currentAmount)}</td>
@@ -1070,9 +1068,9 @@ function buildInvoicePdfHtml({
       </section>
 
       <table class="detail-table">
-        <colgroup><col style="width:40%" /><col style="width:19%" /><col style="width:13%" /><col style="width:14%" /><col style="width:14%" /></colgroup>
-        <thead><tr><th>工事項目</th><th>品番・仕様</th><th class="right">数量</th><th class="right">単価</th><th class="right">金額</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="empty">請求明細がありません</td></tr>`}</tbody>
+        <colgroup><col style="width:59%" /><col style="width:13%" /><col style="width:14%" /><col style="width:14%" /></colgroup>
+        <thead><tr><th>内容</th><th class="right">数量</th><th class="right">単価</th><th class="right">金額</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="empty">請求明細がありません</td></tr>`}</tbody>
       </table>
 
       ${isLastPage ? `
@@ -1122,8 +1120,7 @@ function buildWorkflowPdfHtml({
     const isLastPage = pageIndex === pages.length - 1;
     const rows = pageLines.map(({ item, line, unitPrice }) => `
       <tr>
-        <td><strong>${escapeHtml(formatDocumentWorkItemLabel(item))}</strong></td>
-        <td class="spec-cell">${escapeHtml(formatDocumentSpecification(item))}</td>
+        <td class="content-cell">${buildDocumentContentCell(item)}</td>
         <td class="right">${formatNumber(item.quantity)}${escapeHtml(item.unit)}</td>
         <td class="right">${formatCurrency(unitPrice)}</td>
         <td class="right strong">${formatCurrency(line.subtotal)}</td>
@@ -1165,13 +1162,13 @@ function buildWorkflowPdfHtml({
 
       <section class="amount-band">
         <span>${amountLabel}</span>
-        <strong>${formatCurrency(document.totalAmount)}</strong>
+        <strong class="currency-amount ${getCurrencyAmountSizeClass(document.totalAmount)}">${formatCurrency(document.totalAmount)}</strong>
       </section>
 
       <table class="detail-table">
-        <colgroup><col style="width:40%" /><col style="width:19%" /><col style="width:13%" /><col style="width:14%" /><col style="width:14%" /></colgroup>
-        <thead><tr><th>工事項目</th><th>品番・仕様</th><th class="right">数量</th><th class="right">単価</th><th class="right">金額</th></tr></thead>
-        <tbody>${rows || `<tr><td colspan="5" class="empty">明細がありません</td></tr>`}</tbody>
+        <colgroup><col style="width:59%" /><col style="width:13%" /><col style="width:14%" /><col style="width:14%" /></colgroup>
+        <thead><tr><th>内容</th><th class="right">数量</th><th class="right">単価</th><th class="right">金額</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="4" class="empty">明細がありません</td></tr>`}</tbody>
       </table>
 
       ${isLastPage ? `
@@ -1240,22 +1237,35 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
         .muted { margin: 7px 0 0; color: #64748b; font-size: 12px; }
         .amount-band { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; color: #172554; padding: 15px 20px; }
         .amount-band span { flex-shrink: 0; color: #172554; font-size: 15px; font-weight: 900; line-height: 1; white-space: nowrap; }
-        .amount-band strong { color: #172554; font-size: 28px; font-weight: 900; line-height: 1; white-space: nowrap; }
+        .amount-band strong { flex: 1 1 auto; min-width: 0; color: #172554; font-size: 28px; font-weight: 900; line-height: 1; text-align: right; white-space: nowrap; }
+        .currency-amount { display: inline-block; max-width: 100%; overflow: hidden; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+        .amount-band .currency-amount.amount-long { font-size: 26px; }
+        .amount-band .currency-amount.amount-xlong { font-size: 23px; }
         .invoice-summary-band { margin-top: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-radius: 12px; color: #172554; }
         .invoice-summary-row { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; padding: 9px 12px; }
         .invoice-summary-row span,
         .invoice-summary-row strong { color: #172554; }
         .invoice-summary-row span { font-size: 12px; white-space: nowrap; }
-        .invoice-summary-row strong { font-size: 17px; font-weight: 900; white-space: nowrap; }
+        .invoice-summary-row strong { flex: 1 1 auto; min-width: 0; font-size: 17px; font-weight: 900; text-align: right; white-space: nowrap; }
         .invoice-summary-row.strong { border-color: #93c5fd; background: #dbeafe; }
         .invoice-summary-row.strong span { font-size: 13px; font-weight: 900; line-height: 1; white-space: nowrap; }
         .invoice-summary-row.strong strong { font-size: 20px; font-weight: 900; }
+        .invoice-summary-row .currency-amount.amount-long { font-size: 16px; }
+        .invoice-summary-row .currency-amount.amount-xlong { font-size: 14px; }
+        .invoice-summary-row.strong .currency-amount.amount-long { font-size: 18px; }
+        .invoice-summary-row.strong .currency-amount.amount-xlong { font-size: 16px; }
         .detail-table { width: 100%; margin-top: 18px; border-collapse: collapse; table-layout: fixed; font-size: 10.5px; }
         th { padding: 6px 7px; border-bottom: 2px solid #cbd5e1; color: #475569; text-align: left; font-weight: 800; }
         td { padding: 5px 7px; border-bottom: 1px solid #e2e8f0; vertical-align: top; line-height: 1.35; word-break: break-all; overflow-wrap: anywhere; white-space: normal; }
         td strong { display: block; font-size: 11px; line-height: 1.35; }
         td span { display: block; margin-top: 3px; color: #64748b; font-size: 10px; word-break: break-all; overflow-wrap: anywhere; white-space: normal; }
-        .spec-cell { color: #475569; font-size: 10px; line-height: 1.45; }
+        .content-cell { color: #0f172a; font-size: 10.3px; line-height: 1.38; }
+        .content-title { display: block; font-weight: 800; overflow-wrap: anywhere; word-break: normal; }
+        .content-title span { display: inline; margin-top: 0; font-size: inherit; line-height: inherit; word-break: normal; overflow-wrap: normal; }
+        .content-category { display: inline-block; margin-right: 4px; color: #1e3a8a; white-space: nowrap; }
+        .content-middle { color: #334155; white-space: nowrap; }
+        .content-name { color: #0f172a; }
+        .content-spec { display: block; margin-top: 2px; color: #64748b; font-size: 9.4px; line-height: 1.35; overflow-wrap: anywhere; word-break: normal; }
         tr { break-inside: avoid-column; break-inside: avoid; page-break-inside: avoid; }
         .right { text-align: right; white-space: nowrap; }
         .strong { font-weight: 800; color: #0f766e; }
@@ -1267,9 +1277,11 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
         .totals { font-size: 11px; }
         .total-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #e2e8f0; color: #334155; white-space: nowrap; }
         .total-row span { flex: 0 0 auto; min-width: 0; white-space: nowrap; }
-        .total-row strong { flex: 0 0 auto; white-space: nowrap; }
+        .total-row strong { flex: 1 1 auto; min-width: 0; text-align: right; white-space: nowrap; }
         .total-row.strong { color: #172554; font-size: 13px; font-weight: 900; line-height: 1.1; border-bottom: 2px solid #172554; }
         .total-row.strong strong { font-size: 16px; font-weight: 900; line-height: 1; }
+        .total-row.strong .currency-amount.amount-long { font-size: 15px; }
+        .total-row.strong .currency-amount.amount-xlong { font-size: 13.5px; }
         .tax-box { margin-top: 12px; border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 9px; padding: 9px 12px; color: #166534; font-size: 10px; }
         .full-note { margin-top: 8px; max-height: none; overflow: visible; padding: 10px 12px; font-size: 9.5px; line-height: 1.45; }
         .full-note .note-text { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
@@ -1300,7 +1312,7 @@ export async function openPrintPreviewWindow(input: PrintPreviewInput) {
     documentHtml,
     returnUrl: window.location.href,
   });
-  openBrowserPrintPreviewWindow(input.kind, html);
+  await openPrintPreviewWindowHtml(input.kind, html, `${input.project.name}_${documentTitle}_プレビュー`);
 }
 
 export async function openSealPlacementEditorWindow(
@@ -1336,20 +1348,69 @@ export async function openSealPlacementEditorWindow(
     returnUrl: window.location.href,
   });
 
-  const handleMessage = (event: MessageEvent) => {
-    if (event.data?.editorId !== editorId) return;
-    if (event.data?.type === "mitru-seal-settings-save") {
-      onSave(event.data.settings);
-      window.removeEventListener("message", handleMessage);
+  let unlistenTauriEvent: (() => void) | undefined;
+  const cleanupPreviewEventListeners = () => {
+    window.removeEventListener("message", handleMessage);
+    void unlistenTauriEvent?.();
+    unlistenTauriEvent = undefined;
+  };
+  const handleEditorEvent = (data: unknown) => {
+    if (!isPreviewEditorEvent(data, editorId)) return;
+    if (data.type === "mitru-seal-settings-save") {
+      onSave(data.settings);
+      cleanupPreviewEventListeners();
       return;
     }
-    if (event.data?.type === "mitru-print-preview-export-pdf") {
-      void onExportPdf?.(event.data.settings);
+    if (data.type === "mitru-print-preview-export-pdf") {
+      void onExportPdf?.(data.settings);
     }
   };
+  const handleMessage = (event: MessageEvent) => handleEditorEvent(event.data);
 
   window.addEventListener("message", handleMessage);
-  openBrowserPrintPreviewWindow(input.kind, html);
+  if (isTauriRuntime()) {
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      unlistenTauriEvent = await listen("mitru-print-preview-event", (event) => handleEditorEvent(event.payload));
+    } catch (error) {
+      console.warn("[Mitru] Tauri印刷プレビューイベントの購読に失敗しました。", error);
+    }
+  }
+  await openPrintPreviewWindowHtml(input.kind, html, `${input.project.name}_${documentTitle}_プレビュー`);
+}
+
+type PreviewEditorEvent = {
+  type: "mitru-seal-settings-save" | "mitru-print-preview-export-pdf";
+  editorId: string;
+  settings: ProjectSealSettings;
+};
+
+function isPreviewEditorEvent(value: unknown, editorId: string): value is PreviewEditorEvent {
+  if (!value || typeof value !== "object") return false;
+  const payload = value as Partial<PreviewEditorEvent>;
+  return (
+    payload.editorId === editorId &&
+    (payload.type === "mitru-seal-settings-save" || payload.type === "mitru-print-preview-export-pdf") &&
+    Boolean(payload.settings)
+  );
+}
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+}
+
+async function openPrintPreviewWindowHtml(kind: PrintPreviewInput["kind"], htmlContent: string, title: string) {
+  if (isTauriRuntime()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_print_preview", { htmlContent, title });
+      return;
+    } catch (error) {
+      console.warn("[Mitru] Tauri印刷プレビューの起動に失敗したため、ブラウザプレビューへフォールバックします。", error);
+    }
+  }
+
+  openBrowserPrintPreviewWindow(kind, htmlContent);
 }
 
 function openBrowserPrintPreviewWindow(kind: PrintPreviewInput["kind"], htmlContent: string) {
@@ -1381,6 +1442,7 @@ function buildPrintPreviewWindowHtml({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
     <title>${escapeHtml(title)}</title>
     <style>
       @page { size: A4; margin: 0; }
@@ -1428,28 +1490,6 @@ function buildPrintPreviewWindowHtml({
         flex-wrap: wrap;
         gap: 10px;
         justify-content: flex-end;
-      }
-      .close-button {
-        position: fixed;
-        top: 25px;
-        right: 27px;
-        z-index: 40;
-        width: 38px;
-        height: 38px;
-        border: 0;
-        border-radius: 8px;
-        background: transparent;
-        color: #e2e8f0;
-        padding: 0;
-        font-size: 24px;
-        font-weight: 500;
-        line-height: 1;
-        box-shadow: none;
-        transition: background-color .16s ease, color .16s ease;
-      }
-      .close-button:hover {
-        background: rgba(255,255,255,.08);
-        color: #ffffff;
       }
       .bottom-actions {
         position: fixed;
@@ -1530,7 +1570,6 @@ function buildPrintPreviewWindowHtml({
           print-color-adjust: exact;
         }
         .preview-toolbar,
-        .close-button,
         .bottom-actions { display: none !important; }
         .preview-stage,
         .preview-scale {
@@ -1564,7 +1603,7 @@ function buildPrintPreviewWindowHtml({
       }
     </style>
     <script>
-      var MITRU_RETURN_URL = ${JSON.stringify(returnUrl)};
+      var MITRU_RETURN_URL = ${safeJsonForScript(returnUrl)};
 
       function previewPages() {
         return Array.prototype.slice.call(document.querySelectorAll(".pdf-page"));
@@ -1593,56 +1632,9 @@ function buildPrintPreviewWindowHtml({
         });
       }
 
-      async function invokeClosePrintPreview() {
-        var tauriCoreInvoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
-        var tauriInternalInvoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
-        var invoke = tauriCoreInvoke || tauriInternalInvoke;
-        if (typeof invoke === "function") {
-          await invoke("close_print_preview", {});
-          return true;
-        }
-        return false;
-      }
-
-      async function closePrintPreview() {
-        var closeButton = document.getElementById("mitru-close-print-preview");
-        if (closeButton) {
-          closeButton.disabled = true;
-        }
-
-        try {
-          if (await invokeClosePrintPreview()) {
-            return;
-          }
-        } catch (error) {
-          console.warn("Tauri close_print_preview failed", error);
-        }
-
-        if (window.opener && window.name && window.name.indexOf("mitru-") === 0) {
-          try {
-            window.close();
-            return;
-          } catch (error) {
-            console.warn("window.close failed", error);
-          }
-        }
-
-        window.setTimeout(function () {
-          if (MITRU_RETURN_URL && MITRU_RETURN_URL !== window.location.href) {
-            window.location.replace(MITRU_RETURN_URL);
-            return;
-          }
-          if (window.history.length > 1) {
-            window.history.back();
-            return;
-          }
-          window.location.replace("about:blank");
-        }, 120);
-      }
     </script>
   </head>
   <body>
-    <button id="mitru-close-print-preview" type="button" class="close-button" aria-label="閉じる" onclick="closePrintPreview()">×</button>
     <header class="preview-toolbar">
       <div>
         <p>A4 実寸印刷プレビュー</p>
@@ -1687,6 +1679,7 @@ function buildSealPlacementEditorWindowHtml({
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
     <title>${escapeHtml(title)}</title>
     <style>
       @page { size: A4; margin: 0; }
@@ -1859,28 +1852,6 @@ function buildSealPlacementEditorWindowHtml({
         background: linear-gradient(180deg, rgba(15,23,42,0), rgba(15,23,42,.96) 18%, rgba(15,23,42,.96));
         padding-top: 18px;
       }
-      .close-button {
-        position: fixed;
-        top: 25px;
-        right: 27px;
-        z-index: 50;
-        width: 38px;
-        height: 38px;
-        border: 0;
-        border-radius: 8px;
-        background: transparent;
-        color: #e2e8f0;
-        padding: 0;
-        font-size: 24px;
-        font-weight: 500;
-        line-height: 1;
-        box-shadow: none;
-        transition: background-color .16s ease, color .16s ease;
-      }
-      .close-button:hover {
-        background: rgba(255,255,255,.08);
-        color: #ffffff;
-      }
       button {
         height: 42px;
         border: 1px solid rgba(16,185,129,.34);
@@ -1927,11 +1898,11 @@ function buildSealPlacementEditorWindowHtml({
       @media (max-width: 1020px) {
         .editor-shell { grid-template-columns: 1fr; }
         .control-panel { position: static; height: auto; }
+        .preview-stage { height: auto; max-height: none; }
       }
       @media print {
         body { background: #ffffff !important; }
-        .control-panel,
-        .close-button { display: none !important; }
+        .control-panel { display: none !important; }
         .editor-shell,
         .preview-stage {
           display: block !important;
@@ -1965,7 +1936,6 @@ function buildSealPlacementEditorWindowHtml({
     </style>
   </head>
   <body>
-    <button id="mitru-close-seal-editor" type="button" class="close-button" aria-label="閉じる" onclick="closeEditor()">×</button>
     <main class="editor-shell">
       <section class="preview-stage"><div class="preview-pages">${documentHtml}</div></section>
       <aside class="control-panel">
@@ -2008,52 +1978,32 @@ function buildSealPlacementEditorWindowHtml({
       </aside>
     </main>
     <script>
-      const EDITOR_ID = ${JSON.stringify(editorId)};
-      const RETURN_URL = ${JSON.stringify(returnUrl)};
-      const BASE_SEAL_SIZE = ${JSON.stringify(baseSealSize)};
-      const settings = ${JSON.stringify({
+      const EDITOR_ID = ${safeJsonForScript(editorId)};
+      const RETURN_URL = ${safeJsonForScript(returnUrl)};
+      const BASE_SEAL_SIZE = ${safeJsonForScript(baseSealSize)};
+      const settings = ${safeJsonForScript({
         ...settings,
         opacity: Math.round(settings.opacity * 100),
         logoOpacity: Math.round(settings.logoOpacity * 100),
       })};
       let activeDrag = null;
 
-      async function invokeTauri(command) {
+      async function invokeTauri(command, args) {
         const tauriCoreInvoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
         const tauriInternalInvoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
         const invoke = tauriCoreInvoke || tauriInternalInvoke;
         if (typeof invoke !== "function") return false;
-        await invoke(command, {});
+        await invoke(command, args || {});
         return true;
       }
 
-      async function closeWindowSafely() {
-        try {
-          if (await invokeTauri("close_print_preview")) return;
-        } catch (error) {
-          console.warn("close_print_preview failed", error);
+      async function emitPreviewEvent(type) {
+        const payload = { type, editorId: EDITOR_ID, settings: currentSettingsPayload() };
+        if (window.opener) {
+          window.opener.postMessage(payload, "*");
+          return true;
         }
-
-        if (window.opener && window.name && window.name.indexOf("mitru-") === 0) {
-          try {
-            window.close();
-            return;
-          } catch (error) {
-            console.warn("window.close failed", error);
-          }
-        }
-
-        window.setTimeout(function () {
-          if (RETURN_URL && RETURN_URL !== window.location.href) {
-            window.location.replace(RETURN_URL);
-            return;
-          }
-          if (window.history.length > 1) {
-            window.history.back();
-            return;
-          }
-          window.location.replace("about:blank");
-        }, 140);
+        return invokeTauri("emit_print_preview_event", { payload });
       }
 
       function clamp(value, min, max) {
@@ -2184,23 +2134,13 @@ function buildSealPlacementEditorWindowHtml({
           exportButton.disabled = true;
           exportButton.textContent = "PDF保存を開始...";
         }
-        if (window.opener) {
-          window.opener.postMessage({ type: "mitru-print-preview-export-pdf", editorId: EDITOR_ID, settings: currentSettingsPayload() }, "*");
-        }
+        await emitPreviewEvent("mitru-print-preview-export-pdf");
           window.setTimeout(function () {
           if (exportButton) {
             exportButton.disabled = false;
             exportButton.textContent = "PDF出力";
           }
         }, 1800);
-      }
-
-      async function closeEditor() {
-        const closeButton = document.getElementById("mitru-close-seal-editor");
-        if (closeButton) {
-          closeButton.disabled = true;
-        }
-        await closeWindowSafely();
       }
 
       function bindDrag() {
@@ -2330,12 +2270,19 @@ function buildPdfRecipientDetailsBlock(recipientInfo?: DocumentRecipientInfo) {
   return `<div class="recipient-detail">${rows.map((row) => `<span>${escapeHtml(row)}</span>`).join("")}</div>`;
 }
 
+function getCurrencyAmountSizeClass(value: number) {
+  const digitCount = Math.trunc(Math.abs(value || 0)).toString().length;
+  if (digitCount >= 10) return "amount-xlong";
+  if (digitCount >= 8) return "amount-long";
+  return "amount-normal";
+}
+
 function buildPdfTotalRow(label: string, value: number, strong = false) {
-  return `<div class="total-row ${strong ? "strong" : ""}"><span>${escapeHtml(label)}</span><strong>${formatCurrency(value)}</strong></div>`;
+  return `<div class="total-row ${strong ? "strong" : ""}"><span>${escapeHtml(label)}</span><strong class="currency-amount ${getCurrencyAmountSizeClass(value)}">${formatCurrency(value)}</strong></div>`;
 }
 
 function buildInvoiceBillingSummaryRow(label: string, value: number, strong = false) {
-  return `<div class="invoice-summary-row ${strong ? "strong" : ""}"><span>${escapeHtml(label)}</span><strong>${formatCurrency(value)}</strong></div>`;
+  return `<div class="invoice-summary-row ${strong ? "strong" : ""}"><span>${escapeHtml(label)}</span><strong class="currency-amount ${getCurrencyAmountSizeClass(value)}">${formatCurrency(value)}</strong></div>`;
 }
 
 async function renderA4HtmlToPng(html: string) {
@@ -2405,6 +2352,15 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function safeJsonForScript(value: unknown) {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003C")
+    .replaceAll(">", "\\u003E")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
 }
 
 function escapeAttr(value: string) {
@@ -2481,4 +2437,27 @@ function formatDocumentSpecification(item: ProjectItem) {
     .filter(Boolean)
     .join(" ")
     .trim();
+}
+
+function formatDocumentSpecificationDetail(item: ProjectItem) {
+  return sanitizeInvoiceLineText(item.specification ?? "");
+}
+
+function buildDocumentContentCell(item: ProjectItem) {
+  const majorCategory = sanitizeInvoiceLineText(item.majorCategory);
+  const middleCategory = sanitizeInvoiceLineText(item.middleCategory);
+  const name = sanitizeInvoiceLineText(item.name);
+  const specification = formatDocumentSpecificationDetail(item);
+  const title = [
+    majorCategory ? `<span class="content-category">[${escapeHtml(majorCategory)}]</span>` : "",
+    middleCategory ? `<span class="content-middle">${escapeHtml(middleCategory)}</span>` : "",
+    name ? `<span class="content-name">${escapeHtml(name)}</span>` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return `
+    <strong class="content-title">${title || "工事項目"}</strong>
+    ${specification ? `<span class="content-spec">品番・仕様: ${escapeHtml(specification)}</span>` : ""}
+  `;
 }

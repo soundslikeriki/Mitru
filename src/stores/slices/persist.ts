@@ -58,6 +58,7 @@ import type {
 
 export const projectStoreVersion = 56;
 const projectStoreKey = "mitru-local-store";
+const sampleDataRemovedKey = "mitru-sample-data-removed-v1";
 const samplePortfolioItemById = new Map(samplePortfolioProjectItems.map((item) => [item.id, item]));
 const samplePortfolioCustomerIds = new Set(samplePortfolioCustomers.map((customer) => customer.id));
 const samplePortfolioProjectIds = new Set(samplePortfolioProjects.map((project) => project.id));
@@ -125,7 +126,13 @@ function omitRecordKeys<T>(record: Record<string, T> | undefined, keys: Set<stri
   return Object.fromEntries(Object.entries(record).filter(([key]) => !keys.has(key)));
 }
 
+function hasUserRemovedSampleData() {
+  return typeof localStorage !== "undefined" && localStorage.getItem(sampleDataRemovedKey) === "done";
+}
+
 function refreshSamplePortfolioData(migrated: Partial<ProjectStore>): Partial<ProjectStore> {
+  if (hasUserRemovedSampleData()) return migrated;
+
   return {
     ...migrated,
     customers: [
