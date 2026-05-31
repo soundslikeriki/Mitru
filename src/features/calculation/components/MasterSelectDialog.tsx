@@ -9,7 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { formatCurrency, formatInputNumber, parseNumericInput } from "@/features/calculation/lib/formatting";
 import { useProjectStore, type WorkItemMaster, type WorkItemMasterInput } from "@/stores/project-store";
 
@@ -26,6 +28,7 @@ export function MasterSelectDialog({ open, onOpenChange, onSelect }: MasterSelec
   const [category, setCategory] = useState("すべて");
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<WorkItemMasterInput>(createDefaultWorkMasterInput("内装工事"));
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
   const [recentMasterIds, setRecentMasterIds] = useState<string[]>(() =>
     JSON.parse(localStorage.getItem("mitru-recent-master-ids") ?? "[]") as string[],
   );
@@ -81,7 +84,7 @@ export function MasterSelectDialog({ open, onOpenChange, onSelect }: MasterSelec
     const name = createForm.name.trim();
     const unit = createForm.unit.trim();
     if (!majorCategory || !name || !unit) {
-      window.alert("未入力の情報があります。すべての必須項目を入力してください。");
+      showRequiredFields();
       return;
     }
     const created = createWorkItemMaster({
@@ -98,7 +101,7 @@ export function MasterSelectDialog({ open, onOpenChange, onSelect }: MasterSelec
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
+      <DialogContent className={`${mainAreaDialogClass} max-w-5xl`}>
         <DialogHeader>
           <DialogTitle>工事項目マスタを選択</DialogTitle>
           <DialogDescription>
@@ -267,6 +270,7 @@ export function MasterSelectDialog({ open, onOpenChange, onSelect }: MasterSelec
             </div>
           )}
         </section>
+        {validationDialog}
       </DialogContent>
     </Dialog>
   );

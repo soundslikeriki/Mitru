@@ -1,9 +1,9 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { detailTabClass } from "@/features/shared/page-layout";
 
-const settingsTabs = ["company", "numbers", "tax", "cloud", "export", "display"] as const;
+const settingsTabs = ["company", "seal", "numbers", "tax", "cloud", "export", "display"] as const;
 type SettingsTab = (typeof settingsTabs)[number];
 
 function isSettingsTab(value: string | null): value is SettingsTab {
@@ -12,6 +12,7 @@ function isSettingsTab(value: string | null): value is SettingsTab {
 
 export function SettingsPage({
   companySection,
+  sealSection,
   documentNumberSection,
   taxSection,
   cloudSection,
@@ -19,6 +20,7 @@ export function SettingsPage({
   displaySection,
 }: {
   companySection: ReactNode;
+  sealSection: ReactNode;
   documentNumberSection: ReactNode;
   taxSection: ReactNode;
   cloudSection: ReactNode;
@@ -28,6 +30,14 @@ export function SettingsPage({
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<SettingsTab>(isSettingsTab(tabParam) ? tabParam : "company");
+
+  useEffect(() => {
+    if (isSettingsTab(tabParam)) {
+      setActiveTab(tabParam);
+    } else {
+      setActiveTab("company");
+    }
+  }, [tabParam]);
 
   const handleTabChange = (value: string) => {
     if (!isSettingsTab(value)) return;
@@ -41,6 +51,7 @@ export function SettingsPage({
         <div className="overflow-x-auto">
           <TabsList>
             <TabsTrigger value="company" className={detailTabClass(activeTab === "company")}>会社情報</TabsTrigger>
+            <TabsTrigger value="seal" className={detailTabClass(activeTab === "seal")}>印影設定</TabsTrigger>
             <TabsTrigger value="numbers" className={detailTabClass(activeTab === "numbers")}>書類番号設定</TabsTrigger>
             <TabsTrigger value="tax" className={detailTabClass(activeTab === "tax")}>税率設定</TabsTrigger>
             <TabsTrigger value="cloud" className={detailTabClass(activeTab === "cloud")}>クラウド同期</TabsTrigger>
@@ -50,6 +61,7 @@ export function SettingsPage({
         </div>
 
         <TabsContent value="company">{companySection}</TabsContent>
+        <TabsContent value="seal">{sealSection}</TabsContent>
         <TabsContent value="numbers">{documentNumberSection}</TabsContent>
         <TabsContent value="tax">{taxSection}</TabsContent>
         <TabsContent value="cloud">{cloudSection}</TabsContent>

@@ -806,6 +806,14 @@ export const defaultProjectSealSettings: ProjectSealSettings = {
   logoOpacity: 1,
 };
 
+function clampSealNumber(value: unknown, fallback: number, min: number, max: number) {
+  const next = Number(value ?? fallback);
+  if (!Number.isFinite(next)) return fallback;
+  if (next < min) return min;
+  if (next > max) return max;
+  return next;
+}
+
 export function generateDocumentNumber(
   config: DocumentNumberConfig,
   _documents: Array<{ documentNumber: string }> = [],
@@ -823,15 +831,17 @@ export function normalizeProjectSealSettings(
   return {
     ...defaultProjectSealSettings,
     ...current,
+    enabled: current.enabled ?? defaultProjectSealSettings.enabled,
+    logoEnabled: current.logoEnabled ?? defaultProjectSealSettings.logoEnabled,
     sealImage: current.sealImage || fallbackSealImage,
-    x: 920,
-    y: 270,
-    scale: 100,
-    opacity: 1,
-    logoX: Number(current.logoX ?? defaultProjectSealSettings.logoX),
-    logoY: Number(current.logoY ?? defaultProjectSealSettings.logoY),
-    logoScale: Number(current.logoScale ?? defaultProjectSealSettings.logoScale),
-    logoOpacity: Number(current.logoOpacity ?? defaultProjectSealSettings.logoOpacity),
+    x: Math.round(clampSealNumber(current.x, defaultProjectSealSettings.x, 0, 1000)),
+    y: Math.round(clampSealNumber(current.y, defaultProjectSealSettings.y, 0, 1000)),
+    scale: Math.round(clampSealNumber(current.scale, defaultProjectSealSettings.scale, 20, 240)),
+    opacity: clampSealNumber(current.opacity, defaultProjectSealSettings.opacity, 0, 1),
+    logoX: Math.round(clampSealNumber(current.logoX, defaultProjectSealSettings.logoX, 0, 1000)),
+    logoY: Math.round(clampSealNumber(current.logoY, defaultProjectSealSettings.logoY, 0, 1000)),
+    logoScale: Math.round(clampSealNumber(current.logoScale, defaultProjectSealSettings.logoScale, 20, 240)),
+    logoOpacity: clampSealNumber(current.logoOpacity, defaultProjectSealSettings.logoOpacity, 0, 1),
   };
 }
 

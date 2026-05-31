@@ -3,6 +3,7 @@ import { createWorker } from "tesseract.js";
 import { PlusCircle, ScanText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { CustomerFormFields, Field } from "@/features/customers/components/CustomerForm";
 import { persistImageAssetReferences } from "@/lib/image-storage";
 import {
@@ -13,7 +14,6 @@ import {
   normalizeCustomerInput,
   normalizeCustomerInputField,
   readFileAsDataUrl,
-  requiredFieldsMessage,
 } from "@/features/customers/lib/customer-utils";
 import { type CustomerInput, useProjectStore } from "@/stores/project-store";
 
@@ -37,6 +37,7 @@ export function BusinessCardDialog({
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrStatus, setOcrStatus] = useState("画像をアップロードするとOCRを開始します。");
   const [ocrError, setOcrError] = useState("");
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
 
   const runOcr = async (images = cards) => {
     if (images.length === 0 || ocrRunning) return;
@@ -112,7 +113,7 @@ export function BusinessCardDialog({
 
   const apply = async () => {
     if (!hasCustomerIdentity(form)) {
-      window.alert(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
     const normalizedForm = normalizeCustomerInput({
@@ -262,6 +263,7 @@ export function BusinessCardDialog({
             </div>
           </section>
         </div>
+        {validationDialog}
       </DialogContent>
     </Dialog>
   );

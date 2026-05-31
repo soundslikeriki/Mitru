@@ -575,18 +575,27 @@ export function CloudSyncSection() {
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-3 gap-2 text-center text-xs">
-          <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.08] px-2 py-3">
-            <div className="text-lg font-semibold text-emerald-800 dark:text-emerald-200">{syncSummary.success}</div>
-            <div className="mt-1 font-medium text-emerald-700 dark:text-emerald-100/80">成功</div>
-          </div>
-          <div className="rounded-xl border border-amber-400/20 bg-amber-400/[0.08] px-2 py-3">
-            <div className="text-lg font-semibold text-amber-800 dark:text-amber-200">{syncSummary.skipped}</div>
-            <div className="mt-1 font-medium text-amber-700 dark:text-amber-100/80">未実行</div>
-          </div>
-          <div className="rounded-xl border border-red-400/20 bg-red-400/[0.08] px-2 py-3">
-            <div className="text-lg font-semibold text-rose-800 dark:text-red-200">{syncSummary.error}</div>
-            <div className="mt-1 font-medium text-rose-700 dark:text-red-100/80">失敗</div>
+        <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
+          <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">同期結果</p>
+          <div className="mt-3 grid gap-2 text-sm">
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">成功</span>
+              <span className="min-w-0 max-w-[11rem] truncate text-right font-bold tabular-nums text-emerald-800 dark:text-emerald-200" title={syncSummary.success.toLocaleString("ja-JP")}>
+                {syncSummary.success.toLocaleString("ja-JP")}
+              </span>
+            </div>
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">未実行</span>
+              <span className="min-w-0 max-w-[11rem] truncate text-right font-bold tabular-nums text-amber-800 dark:text-amber-200" title={syncSummary.skipped.toLocaleString("ja-JP")}>
+                {syncSummary.skipped.toLocaleString("ja-JP")}
+              </span>
+            </div>
+            <div className="flex min-w-0 items-center justify-between gap-3">
+              <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">失敗</span>
+              <span className="min-w-0 max-w-[11rem] truncate text-right font-bold tabular-nums text-rose-800 dark:text-rose-200" title={syncSummary.error.toLocaleString("ja-JP")}>
+                {syncSummary.error.toLocaleString("ja-JP")}
+              </span>
+            </div>
           </div>
         </div>
 

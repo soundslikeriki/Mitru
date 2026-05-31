@@ -4,6 +4,7 @@ import { ArrowLeft, PenLine } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ImageAsset } from "@/components/ImageAsset";
 import { Button } from "@/components/ui/button";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { CustomerFormFields } from "@/features/customers/components/CustomerForm";
 import { persistImageAssetReferences } from "@/lib/image-storage";
 import {
@@ -12,7 +13,6 @@ import {
   hasCustomerIdentity,
   normalizeCustomerInput,
   normalizeCustomerInputField,
-  requiredFieldsMessage,
 } from "@/features/customers/lib/customer-utils";
 import { type Customer, type CustomerInput, useProjectStore } from "@/stores/project-store";
 
@@ -23,6 +23,7 @@ export function CustomerDetailPage() {
   const allProjects = useProjectStore((state) => state.projects);
   const updateCustomer = useProjectStore((state) => state.updateCustomer);
   const [form, setForm] = useState<Customer | undefined>(customer);
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
   const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
   const customerProjects = useMemo(
     () => (customer ? getCustomerProjects(projects, customer) : []),
@@ -50,7 +51,7 @@ export function CustomerDetailPage() {
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!hasCustomerIdentity(form)) {
-      window.alert(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
     const normalizedForm = normalizeCustomerInput({
@@ -125,6 +126,7 @@ export function CustomerDetailPage() {
           </section>
         </aside>
       </div>
+      {validationDialog}
     </div>
   );
 }

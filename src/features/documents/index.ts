@@ -1,6 +1,7 @@
 export {
   exportAllDocumentsPdf,
   exportDocumentPdf,
+  exportPrintHtml,
   openPrintPreviewWindow,
   openSealPlacementEditorWindow,
 } from "@/features/documents/document-exporters";

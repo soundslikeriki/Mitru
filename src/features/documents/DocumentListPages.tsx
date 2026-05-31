@@ -1,10 +1,11 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, FileDown, Printer, Trash2 } from "lucide-react";
+import { CheckCircle2, FileText, Printer, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { exportDocumentPdf, openSealPlacementEditorWindow } from "@/features/documents";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
+import { exportPrintHtml, openSealPlacementEditorWindow } from "@/features/documents";
 import { calculateEstimateTotals, calculateLine, roundCurrency } from "@/features/calculation/lib/calculation";
 import { resolveProjectTaxRate } from "@/lib/tax";
 import { ToastMessage } from "@/features/shared/ToastMessage";
@@ -15,8 +16,8 @@ import {
   type InvoiceDocument,
   type OrderDocument,
   type Project,
+  getDocumentSealSettings,
   getProjectCostSettings,
-  getProjectSealSettings,
   useProjectStore,
 } from "@/stores/project-store";
 import type { PrintPreviewInput } from "@/features/documents/types";
@@ -175,7 +176,7 @@ function buildWorkflowPrintInput({
     recipientInfo: buildDocumentRecipientInfo(project, customers),
     companyInfo,
     templateSettings: pdfTemplateSettings,
-    sealSettings: getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage),
+    sealSettings: getDocumentSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage),
     lines,
     totals,
     taxRate: projectTaxRate,
@@ -293,6 +294,17 @@ export function EstimatesPage() {
                 </td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-2.5 text-xs"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate("/settings?tab=seal");
+                      }}
+                    >
+                      印影設定
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -460,6 +472,17 @@ export function InvoicesPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      className="h-8 px-2.5 text-xs"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate("/settings?tab=seal");
+                      }}
+                    >
+                      印影設定
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
                       className="h-8 gap-1 px-2.5 text-xs"
                       onClick={(event) => {
                         event.stopPropagation();
@@ -527,13 +550,13 @@ export function DeliveriesPage() {
   const allCustomers = useProjectStore((state) => state.customers);
   const costSettingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
-  const updateProjectSealSettings = useProjectStore((state) => state.updateProjectSealSettings);
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
   const deliveryDocuments = useProjectStore((state) => state.deliveryDocuments);
   const deleteDeliveryDocument = useProjectStore((state) => state.deleteDeliveryDocument);
   const [deleteTarget, setDeleteTarget] = useState<DeliveryDocument | null>(null);
+  const [pendingExport, setPendingExport] = useState<{ document: DeliveryDocument; project: Project } | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
   const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
@@ -586,21 +609,31 @@ export function DeliveriesPage() {
     const input = buildInput(document, project);
     openSealPlacementEditorWindow(
       input,
-      (settings) => updateProjectSealSettings(project.id, settings),
-      (settings) => exportDocumentPdf({ ...input, sealSettings: settings }),
+      () => undefined,
     );
   };
-
-  const handleExportPdf = async (document: DeliveryDocument, project: Project | undefined) => {
-    if (!project) return;
+  const exportDeliveryPrintHtml = async (document: DeliveryDocument, project: Project) => {
     try {
-      await exportDocumentPdf(buildInput(document, project));
-      setToast({ title: "納品書PDFを出力しました", description: document.documentNumber });
+      const exported = await exportPrintHtml(buildInput(document, project));
+      if (exported === false) return;
+      setToast({
+        title: "印刷用HTMLを書き出しました",
+        description: "保存先フォルダを開きました。HTMLをブラウザで開いて印刷/PDF保存できます。",
+        tone: "success",
+      });
     } catch (error) {
-      setToast({ title: "PDF出力に失敗しました", description: error instanceof Error ? error.message : "不明なエラー", tone: "error" });
+      setToast({
+        title: "印刷用HTMLを書き出せません",
+        description: error instanceof Error ? error.message : "保存処理に失敗しました。",
+        tone: "error",
+      });
     } finally {
-      window.setTimeout(() => setToast(null), 3600);
+      window.setTimeout(() => setToast(null), 4200);
     }
+  };
+  const requestDeliveryPrintHtmlExport = (document: DeliveryDocument, project: Project | undefined) => {
+    if (!project) return;
+    setPendingExport({ document, project });
   };
 
   return (
@@ -651,7 +684,7 @@ export function DeliveriesPage() {
                       }}
                     >
                       <Printer className="size-3.5" />
-                      プレビュー
+                      プレビューで確認
                     </Button>
                     <Button
                       size="sm"
@@ -659,11 +692,11 @@ export function DeliveriesPage() {
                       className="h-8 gap-1 px-2.5 text-xs"
                       onClick={(event) => {
                         event.stopPropagation();
-                        void handleExportPdf(document, project);
+                        requestDeliveryPrintHtmlExport(document, project);
                       }}
                     >
-                      <FileDown className="size-3.5" />
-                      PDF出力
+                      <FileText className="size-3.5" />
+                      印刷用HTMLを書き出す
                     </Button>
                     <Button
                       size="sm"
@@ -710,6 +743,22 @@ export function DeliveriesPage() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
       />
+      <PlacementConfirmDialog
+        open={Boolean(pendingExport)}
+        onCancel={() => setPendingExport(null)}
+        onPreview={() => {
+          if (pendingExport) handlePreview(pendingExport.document, pendingExport.project);
+          setPendingExport(null);
+        }}
+        onSealSettings={() => {
+          setPendingExport(null);
+          navigate("/settings?tab=seal");
+        }}
+        onExport={() => {
+          if (pendingExport) void exportDeliveryPrintHtml(pendingExport.document, pendingExport.project);
+          setPendingExport(null);
+        }}
+      />
       <ToastMessage toast={toast} onClose={() => setToast(null)} />
     </div>
   );
@@ -722,13 +771,13 @@ export function OrdersPage() {
   const allCustomers = useProjectStore((state) => state.customers);
   const costSettingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
-  const updateProjectSealSettings = useProjectStore((state) => state.updateProjectSealSettings);
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
   const orderDocuments = useProjectStore((state) => state.orderDocuments);
   const deleteOrderDocument = useProjectStore((state) => state.deleteOrderDocument);
   const [deleteTarget, setDeleteTarget] = useState<OrderDocument | null>(null);
+  const [pendingExport, setPendingExport] = useState<{ document: OrderDocument; project: Project } | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
   const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
@@ -782,21 +831,31 @@ export function OrdersPage() {
     const input = buildInput(document, project);
     openSealPlacementEditorWindow(
       input,
-      (settings) => updateProjectSealSettings(project.id, settings),
-      (settings) => exportDocumentPdf({ ...input, sealSettings: settings }),
+      () => undefined,
     );
   };
-
-  const handleExportPdf = async (document: OrderDocument, project: Project | undefined) => {
-    if (!project) return;
+  const exportOrderPrintHtml = async (document: OrderDocument, project: Project) => {
     try {
-      await exportDocumentPdf(buildInput(document, project));
-      setToast({ title: "注文書PDFを出力しました", description: document.documentNumber });
+      const exported = await exportPrintHtml(buildInput(document, project));
+      if (exported === false) return;
+      setToast({
+        title: "印刷用HTMLを書き出しました",
+        description: "保存先フォルダを開きました。HTMLをブラウザで開いて印刷/PDF保存できます。",
+        tone: "success",
+      });
     } catch (error) {
-      setToast({ title: "PDF出力に失敗しました", description: error instanceof Error ? error.message : "不明なエラー", tone: "error" });
+      setToast({
+        title: "印刷用HTMLを書き出せません",
+        description: error instanceof Error ? error.message : "保存処理に失敗しました。",
+        tone: "error",
+      });
     } finally {
-      window.setTimeout(() => setToast(null), 3600);
+      window.setTimeout(() => setToast(null), 4200);
     }
+  };
+  const requestOrderPrintHtmlExport = (document: OrderDocument, project: Project | undefined) => {
+    if (!project) return;
+    setPendingExport({ document, project });
   };
 
   return (
@@ -849,7 +908,7 @@ export function OrdersPage() {
                       }}
                     >
                       <Printer className="size-3.5" />
-                      プレビュー
+                      プレビューで確認
                     </Button>
                     <Button
                       size="sm"
@@ -857,11 +916,11 @@ export function OrdersPage() {
                       className="h-8 gap-1 px-2.5 text-xs"
                       onClick={(event) => {
                         event.stopPropagation();
-                        void handleExportPdf(document, project);
+                        requestOrderPrintHtmlExport(document, project);
                       }}
                     >
-                      <FileDown className="size-3.5" />
-                      PDF出力
+                      <FileText className="size-3.5" />
+                      印刷用HTMLを書き出す
                     </Button>
                     <Button
                       size="sm"
@@ -907,6 +966,22 @@ export function OrdersPage() {
         targetName={deleteTarget?.documentNumber}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
+      />
+      <PlacementConfirmDialog
+        open={Boolean(pendingExport)}
+        onCancel={() => setPendingExport(null)}
+        onPreview={() => {
+          if (pendingExport) handlePreview(pendingExport.document, pendingExport.project);
+          setPendingExport(null);
+        }}
+        onSealSettings={() => {
+          setPendingExport(null);
+          navigate("/settings?tab=seal");
+        }}
+        onExport={() => {
+          if (pendingExport) void exportOrderPrintHtml(pendingExport.document, pendingExport.project);
+          setPendingExport(null);
+        }}
       />
       <ToastMessage toast={toast} onClose={() => setToast(null)} />
     </div>
@@ -973,6 +1048,50 @@ function DeleteDocumentDialog({
           </Button>
           <Button className="bg-red-600 text-white hover:bg-red-700" onClick={onConfirm}>
             削除する
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PlacementConfirmDialog({
+  open,
+  onCancel,
+  onSealSettings,
+  onPreview,
+  onExport,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onSealSettings: () => void;
+  onPreview: () => void;
+  onExport: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onCancel()}>
+      <DialogContent className={`${mainAreaDialogClass} w-[calc(100vw-48px)] max-w-[680px] gap-5 bg-white p-7 text-slate-900 dark:bg-slate-950 dark:text-white`}>
+        <DialogHeader>
+          <DialogTitle>書き出し前の確認</DialogTitle>
+          <DialogDescription className="whitespace-normal break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
+            ロゴ・社判の表示や配置が心配な場合は、プレビューまたは印影設定で確認できます。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <Button className="h-10 min-w-[120px] rounded-xl px-4" variant="outline" onClick={onCancel}>
+            キャンセル
+          </Button>
+          <Button className="h-10 min-w-[120px] rounded-xl px-4" variant="outline" onClick={onSealSettings}>
+            印影設定
+          </Button>
+          <Button className="h-10 min-w-[140px] rounded-xl px-4" variant="outline" onClick={onPreview}>
+            プレビューで確認
+          </Button>
+          <Button
+            className="h-10 min-w-[160px] rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700 hover:text-white dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-400 dark:hover:text-white"
+            onClick={onExport}
+          >
+            このまま書き出す
           </Button>
         </div>
       </DialogContent>

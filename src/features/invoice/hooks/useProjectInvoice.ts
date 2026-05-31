@@ -6,9 +6,9 @@ import {
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
 import { resolveProjectTaxRate } from "@/lib/tax";
 import {
+  getDocumentSealSettings,
   getProjectCostSettings,
   getProjectInvoiceSettings,
-  getProjectSealSettings,
   type Project,
   useProjectStore,
 } from "@/stores/project-store";
@@ -42,7 +42,7 @@ export function useProjectInvoice(project: Project) {
   );
   const costSettings = getProjectCostSettings(settingsByProjectId, project.id);
   const invoiceSettings = getProjectInvoiceSettings(invoiceSettingsByProjectId, project.id);
-  const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
+  const sealSettings = getDocumentSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
   const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const projectInvoiceDocuments = useMemo(

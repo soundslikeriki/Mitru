@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { DatabaseBackup, FileDown, FileText, RotateCcw, ShieldAlert } from "lucide-react";
+import { DatabaseBackup, FileDown, RotateCcw, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { exportAllDocumentsPdf } from "@/features/documents";
 import {
   downloadTextFile,
   projectsToCsv,
@@ -18,16 +17,8 @@ const sampleDataRemovedKey = "mitru-sample-data-removed-v1";
 export function DataExportSection() {
   const navigate = useNavigate();
   const allProjects = useProjectStore((state) => state.projects);
-  const projectItems = useProjectStore((state) => state.projectItems);
   const workItemMasters = useProjectStore((state) => state.workItemMasters);
   const materialMasters = useProjectStore((state) => state.materialMasters);
-  const costSettingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
-  const quoteSettingsByProjectId = useProjectStore((state) => state.quoteSettingsByProjectId);
-  const invoiceSettingsByProjectId = useProjectStore((state) => state.invoiceSettingsByProjectId);
-  const invoiceItemsByItemId = useProjectStore((state) => state.invoiceItemsByItemId);
-  const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
-  const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
-  const allInvoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
   const cloudSyncSettings = useProjectStore((state) => state.cloudSyncSettings);
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
@@ -39,14 +30,6 @@ export function DataExportSection() {
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
   const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
-  const estimateDocuments = useMemo(
-    () => allEstimateDocuments.filter((document) => !document.deletedAt),
-    [allEstimateDocuments],
-  );
-  const invoiceDocuments = useMemo(
-    () => allInvoiceDocuments.filter((document) => !document.deletedAt),
-    [allInvoiceDocuments],
-  );
   const notify = (title: string, description: string, tone: "success" | "error" = "success") => {
     setToast({ title, description, tone });
     window.setTimeout(() => setToast(null), 3600);
@@ -60,31 +43,6 @@ export function DataExportSection() {
       if (saved) notify("CSVを出力しました", "全案件一覧を書き出しました。");
     } catch (error) {
       notify("CSV出力に失敗しました", error instanceof Error ? error.message : "不明なエラー", "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const exportPdfBundle = async () => {
-    setBusy(true);
-    try {
-      const count = await exportAllDocumentsPdf({
-        projects,
-        projectItems,
-        costSettingsByProjectId,
-        quoteSettingsByProjectId,
-        invoiceSettingsByProjectId,
-        invoiceItemsByItemId,
-        sealSettingsByProjectId,
-        estimateDocuments,
-        invoiceDocuments,
-        companyInfo,
-        templateSettings: pdfTemplateSettings,
-        taxSettings,
-      });
-      notify("PDF一括出力が完了しました", `見積書・請求書 ${count} 件を1つのPDFにまとめました。`);
-    } catch (error) {
-      notify("PDF一括出力に失敗しました", error instanceof Error ? error.message : "不明なエラー", "error");
     } finally {
       setBusy(false);
     }
@@ -221,13 +179,12 @@ export function DataExportSection() {
           </Button>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
-          <p className="text-sm font-semibold text-white">見積書・請求書を一括でPDF出力</p>
+          <p className="text-sm font-semibold text-white">帳票PDF一括出力（調整中）</p>
           <p className="mt-2 text-sm leading-6 text-slate-400">
-            作成済みの見積書・請求書を1つのPDFファイルにまとめて出力します。
+            v0.9.7-betaでは日本語表示の安定性を優先し、一括PDF出力を一時停止しています。各書類画面の「印刷用HTMLを書き出す」から保存してください。
           </p>
-          <Button className="mt-4 gap-2" onClick={exportPdfBundle} disabled={busy}>
-            <FileText className="size-4" />
-            {busy ? "出力中..." : "帳票PDF一括出力"}
+          <Button className="mt-4 gap-2" disabled>
+            調整中
           </Button>
         </div>
       </div>

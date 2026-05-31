@@ -101,6 +101,8 @@ import type {
   ProjectStore,
 } from "./slices/types";
 
+export const documentSealSettingsKey = "__mitru-document-seal-settings__";
+
 export const useProjectStore = create<ProjectStore>()(
   persist(
     // 現在のMitruはZustand + localStorageのみで永続化しています。SQLite/drizzleのDB層は未使用です。
@@ -215,5 +217,14 @@ export function getProjectSealSettings(
   fallbackSealImage = "",
 ) {
   const current = settings?.[projectId];
+  return normalizeProjectSealSettings(current, fallbackSealImage);
+}
+
+export function getDocumentSealSettings(
+  settings: Record<string, ProjectSealSettings> | undefined,
+  projectId: string,
+  fallbackSealImage = "",
+) {
+  const current = settings?.[documentSealSettingsKey] ?? settings?.[projectId];
   return normalizeProjectSealSettings(current, fallbackSealImage);
 }

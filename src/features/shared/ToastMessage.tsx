@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { createPortal } from "react-dom";
 
 export type ToastState = { title: string; description: string; tone?: "success" | "error" } | null;
 
@@ -13,9 +14,9 @@ export function ToastMessage({
 
   const isError = toast.tone === "error";
 
-  return (
+  const toastElement = (
     <motion.div
-      className={`fixed bottom-5 right-5 z-[100] w-[340px] rounded-xl border p-4 shadow-2xl backdrop-blur-xl ${
+      className={`fixed bottom-4 left-4 right-4 z-[900] mx-auto w-auto max-w-[380px] rounded-xl border p-4 shadow-2xl backdrop-blur-xl sm:left-auto sm:bottom-6 sm:right-6 sm:w-[360px] sm:max-w-[calc(100vw-2rem)] ${
         isError
           ? "border-rose-200 bg-rose-100 text-rose-950 shadow-rose-950/10 ring-1 ring-rose-200/70 dark:border-rose-300/35 dark:bg-rose-200 dark:text-rose-950 dark:shadow-rose-950/35 dark:ring-rose-300/25"
           : "border-emerald-400/30 bg-slate-950/90"
@@ -37,4 +38,6 @@ export function ToastMessage({
       </div>
     </motion.div>
   );
+
+  return createPortal(toastElement, document.body);
 }

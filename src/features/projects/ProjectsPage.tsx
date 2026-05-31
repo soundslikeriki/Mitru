@@ -5,8 +5,10 @@ import { BarChart3, MapPin, PlusCircle, ShieldAlert, Trash2 } from "lucide-react
 import { Link, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { CustomerCreateDialog } from "@/features/customers/CustomersPage";
 import { formatProfitRate } from "@/features/calculation/lib/profit";
 import { projectStatusClass } from "@/features/projects/components/ProjectStatusBar";
@@ -31,7 +33,6 @@ const statusOptions: Array<ProjectStatus | "すべて"> = [
   "失注",
   "破棄",
 ];
-const requiredFieldsMessage = "未入力の情報があります。すべての必須項目を入力してください。";
 const listDeleteButtonClass =
   "text-slate-500 hover:border-red-300/50 hover:bg-red-500/10 hover:text-red-500 dark:text-slate-400 dark:hover:border-red-400/30 dark:hover:bg-red-500/10 dark:hover:text-red-300";
 type ProjectSortMode = "updated" | "project-number" | "margin-desc" | "risk";
@@ -396,6 +397,7 @@ function ProjectCreateDialog({
   const allCustomers = useProjectStore((state) => state.customers);
   const customers = useMemo(() => allCustomers.filter((customer) => !customer.deletedAt), [allCustomers]);
   const [customerCreateOpen, setCustomerCreateOpen] = useState(false);
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
   const [form, setForm] = useState<NewProjectInput>({
     customerId: "",
     name: "",
@@ -419,7 +421,7 @@ function ProjectCreateDialog({
     const effectiveClientName = form.clientName.trim() || selectedCustomer?.name.trim() || "";
     const effectiveClientCompanyName = form.clientCompanyName?.trim() || selectedCustomer?.companyName.trim() || "";
     if (!form.name.trim() || (!effectiveClientName && !effectiveClientCompanyName) || !form.constructionName.trim() || !form.location.trim() || !form.startDate.trim() || !form.endDate.trim()) {
-      window.alert(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
     const project = createProject({
@@ -448,7 +450,7 @@ function ProjectCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className={`${mainAreaDialogClass} max-w-2xl`}>
         <DialogHeader>
           <DialogTitle>新規案件作成</DialogTitle>
           <DialogDescription>
@@ -579,6 +581,7 @@ function ProjectCreateDialog({
             updateField("location", customer.address);
           }}
         />
+        {validationDialog}
       </DialogContent>
     </Dialog>
   );

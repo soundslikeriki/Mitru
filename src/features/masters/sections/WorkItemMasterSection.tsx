@@ -3,7 +3,9 @@ import { motion } from "framer-motion";
 import { ChevronRight, PlusCircle, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { defaultInteriorWorkItemMasterInputs, systemMaterialCategories, systemWorkMasterCategories } from "@/stores/defaults";
 import {
   type MaterialCategory,
@@ -15,7 +17,6 @@ import {
 } from "@/stores/project-store";
 import { isProtectedMaster } from "@/stores/slices/master-slice";
 
-const requiredFieldsMessage = "未入力の情報があります。すべての必須項目を入力してください。";
 const workItemMastersInitializedKey = "mitru-work-item-masters-initialized-v1";
 const workItemMastersUserManagedKey = "mitru-work-item-masters-user-managed-v1";
 const workMasterGridClass = "grid-cols-[44px_minmax(280px,1fr)_96px_140px_128px_128px_88px_132px]";
@@ -30,6 +31,7 @@ export function WorkItemMasterSection() {
   const [editingMaster, setEditingMaster] = useState<WorkItemMaster | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [openCategories, setOpenCategories] = useState<Set<string>>(() => new Set(["よく使う項目"]));
+  const { dialog: noticeDialog, showNotice } = useValidationNoticeDialog();
   const categories = useMemo(() => ["すべて", ...workMasterCategoryOrder], []);
 
   useEffect(() => {
@@ -135,7 +137,7 @@ export function WorkItemMasterSection() {
             }}
             onDelete={(master) => {
               if (isProtectedMaster(master.id, { workItemMasters: masters })) {
-                alert("この大項目はシステムデフォルトのため削除できません。中項目・細目を追加して運用してください。");
+                showNotice("削除できません", "この大項目はシステムデフォルトのため削除できません。中項目・細目を追加して運用してください。");
                 return;
               }
               if (confirmDestructive("工事項目マスタを削除します", `${master.majorCategory} / ${master.name} を削除します。この操作は元に戻せません。`)) {
@@ -162,7 +164,7 @@ export function WorkItemMasterSection() {
               }}
               onDelete={(master) => {
                 if (isProtectedMaster(master.id, { workItemMasters: masters })) {
-                  alert("この大項目はシステムデフォルトのため削除できません。中項目・細目を追加して運用してください。");
+                  showNotice("削除できません", "この大項目はシステムデフォルトのため削除できません。中項目・細目を追加して運用してください。");
                   return;
                 }
                 if (confirmDestructive("工事項目マスタを削除します", `${master.majorCategory} / ${master.name} を削除します。この操作は元に戻せません。`)) {
@@ -182,6 +184,7 @@ export function WorkItemMasterSection() {
       </section>
 
       <WorkItemMasterDialog open={dialogOpen} onOpenChange={setDialogOpen} master={editingMaster} />
+      {noticeDialog}
     </motion.div>
   );
 }
@@ -313,6 +316,7 @@ export function MaterialMasterSection() {
   const [openCategories, setOpenCategories] = useState<Set<string>>(() => new Set(["よく使う項目"]));
   const [editingMaterial, setEditingMaterial] = useState<MaterialMaster | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const { dialog: noticeDialog, showNotice } = useValidationNoticeDialog();
   const filteredMaterials = useMemo(() => {
     return materials.filter((material) => {
       const materialCategory = getMaterialCategory(material);
@@ -394,7 +398,7 @@ export function MaterialMasterSection() {
             }}
             onDelete={(material) => {
               if (isProtectedMaster(material.id, { materialMasters: materials })) {
-                alert("この材料カテゴリはシステムデフォルトのため削除できません。材料を追加して運用してください。");
+                showNotice("削除できません", "この材料カテゴリはシステムデフォルトのため削除できません。材料を追加して運用してください。");
                 return;
               }
               if (confirmDestructive("材料マスタを削除します", `${getMaterialDisplayName(material)} を削除します。この操作は元に戻せません。`)) {
@@ -417,7 +421,7 @@ export function MaterialMasterSection() {
               }}
               onDelete={(material) => {
                 if (isProtectedMaster(material.id, { materialMasters: materials })) {
-                  alert("この材料カテゴリはシステムデフォルトのため削除できません。材料を追加して運用してください。");
+                  showNotice("削除できません", "この材料カテゴリはシステムデフォルトのため削除できません。材料を追加して運用してください。");
                   return;
                 }
                 if (confirmDestructive("材料マスタを削除します", `${getMaterialDisplayName(material)} を削除します。この操作は元に戻せません。`)) {
@@ -436,6 +440,7 @@ export function MaterialMasterSection() {
       </section>
 
       <MaterialMasterDialog open={dialogOpen} onOpenChange={setDialogOpen} material={editingMaterial} />
+      {noticeDialog}
     </motion.div>
   );
 }
@@ -599,6 +604,7 @@ function WorkItemMasterDialog({
   const createWorkItemMaster = useProjectStore((state) => state.createWorkItemMaster);
   const updateWorkItemMaster = useProjectStore((state) => state.updateWorkItemMaster);
   const [form, setForm] = useState<WorkItemMasterInput>(masterToInput(master));
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
 
   useEffect(() => {
     setForm(masterToInput(master));
@@ -611,7 +617,7 @@ function WorkItemMasterDialog({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form.majorCategory.trim() || !form.middleCategory.trim() || !form.name.trim() || !form.unit.trim()) {
-      window.alert(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
     const normalizedForm: WorkItemMasterInput = {
@@ -629,7 +635,7 @@ function WorkItemMasterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className={mainAreaDialogClass}>
         <DialogHeader>
           <DialogTitle>{master ? "工事項目マスタ編集" : "工事項目マスタ追加"}</DialogTitle>
           <DialogDescription>積算に利用する標準歩掛・標準単価を登録します。</DialogDescription>
@@ -663,6 +669,7 @@ function WorkItemMasterDialog({
             <Button type="submit">{master ? "更新する" : "追加する"}</Button>
           </div>
         </form>
+        {validationDialog}
       </DialogContent>
     </Dialog>
   );
@@ -696,16 +703,14 @@ function MaterialMasterDialog({
   const createMaterialMaster = useProjectStore((state) => state.createMaterialMaster);
   const updateMaterialMaster = useProjectStore((state) => state.updateMaterialMaster);
   const [form, setForm] = useState<MaterialMasterInput>(materialToInput(material));
-  const [validationError, setValidationError] = useState("");
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
 
   useEffect(() => {
     setForm(materialToInput(material));
-    setValidationError("");
   }, [material, open]);
 
   const update = (field: keyof MaterialMasterInput, value: string | number) => {
     setForm((current) => ({ ...current, [field]: value }));
-    setValidationError("");
   };
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -721,11 +726,11 @@ function MaterialMasterDialog({
     };
 
     if (!normalizedForm.productName && !normalizedForm.productNumber) {
-      setValidationError(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
     if (!normalizedForm.unit) {
-      setValidationError(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
 
@@ -740,7 +745,7 @@ function MaterialMasterDialog({
   const handleWebSearch = async () => {
     const query = [form.productNumber, form.productName, form.manufacturer].map((value) => value.trim()).filter(Boolean).join(" ");
     if (!query.trim()) {
-      alert(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
 
@@ -760,7 +765,7 @@ function MaterialMasterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className={`${mainAreaDialogClass} max-w-2xl`}>
         <DialogHeader>
           <DialogTitle>{material ? "材料マスタ編集" : "材料マスタ追加"}</DialogTitle>
           <DialogDescription>商品名、品番、メーカー、規格、材料単価を登録します。</DialogDescription>
@@ -801,16 +806,12 @@ function MaterialMasterDialog({
             <Field label="材料単価"><Input inputMode="numeric" value={formatInputNumber(form.materialUnitCost)} onChange={(e) => update("materialUnitCost", parseNumericInput(e.target.value))} /></Field>
           </div>
           <Field label="備考"><Input value={form.note} onChange={(e) => update("note", e.target.value)} /></Field>
-          {validationError && (
-            <div className="rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-200">
-              {validationError}
-            </div>
-          )}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>キャンセル</Button>
             <Button type="submit">{material ? "更新する" : "追加する"}</Button>
           </div>
         </form>
+        {validationDialog}
       </DialogContent>
     </Dialog>
   );

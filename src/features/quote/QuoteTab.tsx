@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { PlusCircle, Printer, Trash2 } from "lucide-react";
-import { useSearchParams } from "react-router";
+import { FileText, PlusCircle, Printer, Trash2 } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
 import { QuoteTable } from "@/features/quote/components/QuoteTable";
 import {
@@ -10,7 +12,6 @@ import {
   calculateLine,
 } from "@/features/calculation/lib/calculation";
 import {
-  buildPdfFileName,
   confirmDestructive,
   formatCurrency,
   formatDate,
@@ -27,9 +28,9 @@ import { buildDocumentRecipientInfo } from "@/features/documents/document-helper
 import type { PrintPreviewInput, QuotePdfLine } from "@/features/documents/types";
 import { ToastMessage } from "@/features/shared/ToastMessage";
 import {
+  getDocumentSealSettings,
   getProjectCostSettings,
   getProjectQuoteSettings,
-  getProjectSealSettings,
   type EstimateDocument,
   type EstimateDocumentStatus,
   type Project,
@@ -42,14 +43,14 @@ type QuoteTabProps = {
   onOpenPrintPreview: (
     input: PrintPreviewInput,
     onSave: (settings: ProjectSealSettings) => void,
-    onExportPdf?: (settings: ProjectSealSettings) => Promise<void> | void,
   ) => void;
-  onExportPdf: (input: PrintPreviewInput) => Promise<void>;
+  onExportPrintHtml: (input: PrintPreviewInput) => Promise<boolean | void>;
 };
 
 const estimateStatusOptions: EstimateDocumentStatus[] = ["下書き", "発行済", "失効"];
 
-export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabProps) {
+export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: QuoteTabProps) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const allItems = useProjectStore((state) => state.projectItems);
   const items = useMemo(
@@ -67,7 +68,6 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
   const updateEstimateDocumentStatus = useProjectStore((state) => state.updateEstimateDocumentStatus);
   const deleteEstimateDocument = useProjectStore((state) => state.deleteEstimateDocument);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
-  const updateProjectSealSettings = useProjectStore((state) => state.updateProjectSealSettings);
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
@@ -82,10 +82,11 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
   );
   const estimateDocumentCount = projectEstimateDocuments.length;
   const [selectedEstimateDocumentId, setSelectedEstimateDocumentId] = useState<string | null>(null);
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
   const costSettings = getProjectCostSettings(settingsByProjectId, project.id);
   const quoteSettings = getProjectQuoteSettings(quoteSettingsByProjectId, project.id);
-  const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
+  const sealSettings = getDocumentSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
   const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const totals = calculateEstimateTotals(
@@ -239,21 +240,30 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
   const openQuotePrintPreview = () => {
     onOpenPrintPreview(
       quotePrintInput,
-      (input) => updateProjectSealSettings(project.id, input),
-      async (input) => {
-        try {
-          await onExportPdf({ ...quotePrintInput, sealSettings: input });
-          if (selectedEstimateDocument) {
-            updateEstimateDocumentStatus(selectedEstimateDocument.id, "発行済");
-          }
-          setToast({ title: "見積書PDFを出力しました", description: buildPdfFileName(project.name, "見積書") });
-        } catch (error) {
-          setToast({ title: "PDF出力に失敗しました", description: error instanceof Error ? error.message : "不明なエラー", tone: "error" });
-        } finally {
-          window.setTimeout(() => setToast(null), 3600);
-        }
-      },
+      () => undefined,
     );
+  };
+  const exportQuotePrintHtml = async () => {
+    try {
+      const exported = await onExportPrintHtml(quotePrintInput);
+      if (exported === false) return;
+      setToast({
+        title: "印刷用HTMLを書き出しました",
+        description: "保存先フォルダを開きました。HTMLをブラウザで開いて印刷/PDF保存できます。",
+        tone: "success",
+      });
+    } catch (error) {
+      setToast({
+        title: "印刷用HTMLを書き出せません",
+        description: error instanceof Error ? error.message : "保存処理に失敗しました。",
+        tone: "error",
+      });
+    } finally {
+      window.setTimeout(() => setToast(null), 4200);
+    }
+  };
+  const requestQuotePrintHtmlExport = () => {
+    setExportConfirmOpen(true);
   };
   const deleteProjectEstimateDocument = (document: EstimateDocument) => {
     if (!confirmDestructive("削除してよろしいですか？", `${document.documentNumber} を削除します。この操作は元に戻せません。`)) return;
@@ -274,9 +284,16 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
       <div className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
         <div className="flex justify-end border-b border-white/10 p-3">
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" onClick={() => navigate("/settings?tab=seal")}>
+              印影設定
+            </Button>
             <Button variant="outline" className="gap-2" onClick={openQuotePrintPreview}>
               <Printer className="size-4" />
-              プレビュー
+              プレビューで確認
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={requestQuotePrintHtmlExport}>
+              <FileText className="size-4" />
+              印刷用HTMLを書き出す
             </Button>
           </div>
         </div>
@@ -374,8 +391,68 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPdf }: QuoteTabP
 
         <QuoteTable lines={displayQuoteLines} />
       </div>
+      <PlacementConfirmDialog
+        open={exportConfirmOpen}
+        onCancel={() => setExportConfirmOpen(false)}
+        onPreview={() => {
+          setExportConfirmOpen(false);
+          openQuotePrintPreview();
+        }}
+        onSealSettings={() => {
+          setExportConfirmOpen(false);
+          navigate("/settings?tab=seal");
+        }}
+        onExport={() => {
+          setExportConfirmOpen(false);
+          void exportQuotePrintHtml();
+        }}
+      />
       <ToastMessage toast={toast} onClose={() => setToast(null)} />
     </motion.section>
+  );
+}
+
+function PlacementConfirmDialog({
+  open,
+  onCancel,
+  onSealSettings,
+  onPreview,
+  onExport,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onSealSettings: () => void;
+  onPreview: () => void;
+  onExport: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onCancel()}>
+      <DialogContent className={`${mainAreaDialogClass} w-[calc(100vw-48px)] max-w-[680px] gap-5 bg-white p-7 text-slate-900 dark:bg-slate-950 dark:text-white`}>
+        <DialogHeader>
+          <DialogTitle>書き出し前の確認</DialogTitle>
+          <DialogDescription className="whitespace-normal break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
+            ロゴ・社判の表示や配置が心配な場合は、プレビューまたは印影設定で確認できます。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <Button className="h-10 min-w-[120px] rounded-xl px-4" variant="outline" onClick={onCancel}>
+            キャンセル
+          </Button>
+          <Button className="h-10 min-w-[120px] rounded-xl px-4" variant="outline" onClick={onSealSettings}>
+            印影設定
+          </Button>
+          <Button className="h-10 min-w-[140px] rounded-xl px-4" variant="outline" onClick={onPreview}>
+            プレビューで確認
+          </Button>
+          <Button
+            className="h-10 min-w-[160px] rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700 hover:text-white dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-400 dark:hover:text-white"
+            onClick={onExport}
+          >
+            このまま書き出す
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

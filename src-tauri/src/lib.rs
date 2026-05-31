@@ -2,7 +2,8 @@ use std::{
     fs,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::{Emitter, LogicalSize, Manager};
+use tauri::{LogicalSize, Manager};
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_shell::ShellExt;
 
 const PRINT_PREVIEW_WIDTH: f64 = 1280.0;
@@ -23,8 +24,7 @@ async fn open_print_preview(
         .as_millis();
     let file_name = format!("mitru_print_preview_{timestamp}.html");
     let file_path = std::env::temp_dir().join(file_name);
-
-    fs::write(&file_path, html_content).map_err(|error| error.to_string())?;
+    fs::write(&file_path, &html_content).map_err(|error| error.to_string())?;
 
     let url = tauri::Url::from_file_path(&file_path)
         .map_err(|_| "印刷プレビュー用HTMLのURL作成に失敗しました".to_string())?;
@@ -104,21 +104,9 @@ async fn close_current_window(window: tauri::WebviewWindow) -> Result<(), String
 }
 
 #[tauri::command]
-async fn emit_print_preview_event(
-    app: tauri::AppHandle,
-    payload: serde_json::Value,
-) -> Result<(), String> {
-    let event_type = payload
-        .get("type")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "印刷プレビューイベントのtypeが不正です".to_string())?;
-
-    match event_type {
-        "mitru-seal-settings-save" | "mitru-print-preview-export-pdf" => {}
-        _ => return Err("許可されていない印刷プレビューイベントです".to_string()),
-    }
-
-    app.emit("mitru-print-preview-event", payload)
+fn reveal_path_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    app.opener()
+        .reveal_item_in_dir(std::path::PathBuf::from(path))
         .map_err(|error| error.to_string())
 }
 
@@ -163,7 +151,7 @@ pub fn run() {
             open_print_preview,
             close_print_preview,
             close_current_window,
-            emit_print_preview_event,
+            reveal_path_in_folder,
             open_web_search
         ])
         .run(tauri::generate_context!())

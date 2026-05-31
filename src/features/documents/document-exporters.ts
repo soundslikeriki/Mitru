@@ -20,6 +20,11 @@ export async function exportAllDocumentsPdf(input: Parameters<typeof import("@/f
   return module.exportAllDocumentsPdf(input);
 }
 
+export async function exportPrintHtml(input: PrintPreviewInput) {
+  const module = await import("@/features/documents/PdfGenerator");
+  return module.exportPrintHtml(input);
+}
+
 export async function openPrintPreviewWindow(input: PrintPreviewInput) {
   const module = await import("@/features/documents/PdfGenerator");
   return module.openPrintPreviewWindow(input);
@@ -28,8 +33,7 @@ export async function openPrintPreviewWindow(input: PrintPreviewInput) {
 export async function openSealPlacementEditorWindow(
   input: PrintPreviewInput,
   onSave: Parameters<typeof import("@/features/documents/PdfGenerator").openSealPlacementEditorWindow>[1],
-  onExportPdf?: Parameters<typeof import("@/features/documents/PdfGenerator").openSealPlacementEditorWindow>[2],
 ) {
   const module = await import("@/features/documents/PdfGenerator");
-  return module.openSealPlacementEditorWindow(input, onSave, onExportPdf);
+  return module.openSealPlacementEditorWindow(input, onSave);
 }

@@ -1,11 +1,12 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { PlusCircle, ScanText } from "lucide-react";
+import { PlusCircle } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
-import { BusinessCardDialog } from "@/features/customers/components/CustomerCard";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { CustomerList } from "@/features/customers/components/CustomerList";
 import { CustomerFormFields, Field } from "@/features/customers/components/CustomerForm";
 import { useCustomers } from "@/features/customers/hooks/useCustomers";
@@ -18,7 +19,6 @@ import {
   hasCustomerIdentity,
   normalizeCustomerInput,
   normalizeCustomerInputField,
-  requiredFieldsMessage,
 } from "@/features/customers/lib/customer-utils";
 import { ToastMessage } from "@/features/shared/ToastMessage";
 import {
@@ -45,7 +45,6 @@ export function CustomersPage() {
     type,
   } = useCustomers();
   const [createOpen, setCreateOpen] = useState(false);
-  const [businessCardOpen, setBusinessCardOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
 
@@ -122,10 +121,6 @@ export function CustomersPage() {
           </select>
         </div>
         <div className="flex flex-wrap items-center gap-3 lg:justify-end">
-          <Button variant="outline" className="gap-2" onClick={() => setBusinessCardOpen(true)}>
-            <ScanText className="size-4" />
-            名刺から登録
-          </Button>
           <Button className="gap-2" onClick={() => setCreateOpen(true)}>
             <PlusCircle className="size-4" />
             新規顧客登録
@@ -155,7 +150,6 @@ export function CustomersPage() {
           window.setTimeout(() => setToast(null), 3600);
         }}
       />
-      <BusinessCardDialog open={businessCardOpen} onOpenChange={setBusinessCardOpen} />
       <DeleteDocumentDialog
         open={Boolean(deleteTarget)}
         title="顧客を削除しますか？"
@@ -181,13 +175,13 @@ export function CustomerCreateDialog({
   const navigate = useNavigate();
   const createCustomer = useProjectStore((state) => state.createCustomer);
   const [form, setForm] = useState<CustomerInput>(blankCustomerInput());
-  const [businessCardOpen, setBusinessCardOpen] = useState(false);
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
   const update = (field: keyof CustomerInput, value: string) =>
     setForm((current) => ({ ...current, [field]: normalizeCustomerInputField(field, value) }));
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!hasCustomerIdentity(form)) {
-      window.alert(requiredFieldsMessage);
+      showRequiredFields();
       return;
     }
     const customer = createCustomer(normalizeCustomerInput({
@@ -205,15 +199,11 @@ export function CustomerCreateDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className={`${mainAreaDialogClass} max-w-3xl`}>
         <DialogHeader>
           <DialogTitle>新規顧客登録</DialogTitle>
           <DialogDescription>顧客情報を登録すると、新規案件作成時に選択できます。</DialogDescription>
         </DialogHeader>
-        <Button type="button" variant="outline" className="w-fit gap-2" onClick={() => setBusinessCardOpen(true)}>
-          <ScanText className="size-4" />
-          名刺を読み込む
-        </Button>
         <form className="grid gap-4" onSubmit={submit} noValidate>
           <CustomerFormFields form={form} update={update} />
           <div className="flex justify-end gap-3">
@@ -221,11 +211,7 @@ export function CustomerCreateDialog({
             <Button type="submit">登録する</Button>
           </div>
         </form>
-        <BusinessCardDialog
-          open={businessCardOpen}
-          onOpenChange={setBusinessCardOpen}
-          onApply={(data) => setForm((current) => normalizeCustomerInput({ ...current, ...data }))}
-        />
+        {validationDialog}
       </DialogContent>
     </Dialog>
   );

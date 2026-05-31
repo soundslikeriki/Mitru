@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { formatCurrency, formatDate, formatInputNumber, parseNumericInput } from "@/features/calculation/lib/formatting";
 import { buildPurchaseOrderSummaries } from "@/features/purchases/lib/purchases";
 import { ToastMessage } from "@/features/shared/ToastMessage";
@@ -22,6 +23,7 @@ export function PurchasesPage() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("銀行振込");
   const [note, setNote] = useState("");
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
 
   const projects = useMemo(() => allProjects.filter((project) => !project.deletedAt), [allProjects]);
   const summaries = useMemo(
@@ -45,8 +47,7 @@ export function PurchasesPage() {
     if (!targetOrder) return;
     const amount = parseNumericInput(purchaseAmount);
     if (amount <= 0) {
-      setToast({ title: "仕入額を入力してください", description: "0円より大きい金額を入力してください。", tone: "error" });
-      window.setTimeout(() => setToast(null), 3000);
+      showRequiredFields(["支払額"]);
       return;
     }
     const record = registerOrderPurchase(targetOrder.id, {
@@ -184,6 +185,7 @@ export function PurchasesPage() {
       </section>
 
       <ToastMessage toast={toast} onClose={() => setToast(null)} />
+      {validationDialog}
     </div>
   );
 }

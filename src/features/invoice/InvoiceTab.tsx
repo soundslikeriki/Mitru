@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle2, PlusCircle, Printer, Trash2 } from "lucide-react";
+import { CheckCircle2, FileText, PlusCircle, Printer, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { InvoiceProgress } from "@/features/invoice/components/InvoiceProgress";
 import { InvoiceTable } from "@/features/invoice/components/InvoiceTable";
 import {
@@ -11,7 +15,6 @@ import {
   roundCurrency,
 } from "@/features/calculation/lib/calculation";
 import {
-  buildPdfFileName,
   confirmDestructive,
   formatCurrency,
   formatDate,
@@ -36,9 +39,9 @@ import {
 import type { InvoicePdfLine, PrintPreviewInput } from "@/features/documents/types";
 import { ToastMessage } from "@/features/shared/ToastMessage";
 import {
+  getDocumentSealSettings,
   getProjectCostSettings,
   getProjectInvoiceSettings,
-  getProjectSealSettings,
   type EstimateDocument,
   type InvoiceDocument,
   type PaymentRecord,
@@ -58,15 +61,15 @@ type InvoiceTabProps = {
   onOpenPrintPreview: (
     input: PrintPreviewInput,
     onSave: (settings: ProjectSealSettings) => void,
-    onExportPdf?: (settings: ProjectSealSettings) => Promise<void> | void,
   ) => void;
-  onExportPdf: (input: PrintPreviewInput) => Promise<void>;
+  onExportPrintHtml: (input: PrintPreviewInput) => Promise<boolean | void>;
 };
 
 const invoiceStatusOptions: Array<InvoiceDocument["status"]> = ["下書き", "発行済", "入金済"];
 const paymentMethodOptions: PaymentMethod[] = ["銀行振込", "現金", "カード", "その他"];
 
-export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: InvoiceTabProps) {
+export function InvoiceTab({ project, onOpenPrintPreview, onExportPrintHtml }: InvoiceTabProps) {
+  const navigate = useNavigate();
   const allItems = useProjectStore((state) => state.projectItems);
   const allProjects = useProjectStore((state) => state.projects);
   const items = useMemo(
@@ -90,7 +93,6 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const deleteInvoicePayment = useProjectStore((state) => state.deleteInvoicePayment);
   const deleteInvoiceDocument = useProjectStore((state) => state.deleteInvoiceDocument);
   const sealSettingsByProjectId = useProjectStore((state) => state.sealSettingsByProjectId);
-  const updateProjectSealSettings = useProjectStore((state) => state.updateProjectSealSettings);
   const companyInfo = useProjectStore((state) => state.companyInfo);
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
@@ -109,10 +111,12 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("銀行振込");
   const [paymentNote, setPaymentNote] = useState("");
+  const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
   const costSettings = getProjectCostSettings(settingsByProjectId, project.id);
   const invoiceSettings = getProjectInvoiceSettings(invoiceSettingsByProjectId, project.id);
-  const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
+  const sealSettings = getDocumentSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
   const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const defaultBankAccount = companyInfo.bankAccounts.find((account) => account.isDefault) ?? companyInfo.bankAccounts[0] ?? null;
@@ -399,28 +403,30 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const openInvoicePrintPreview = () => {
     onOpenPrintPreview(
       invoicePrintInput,
-      (input) => updateProjectSealSettings(project.id, input),
-      async (input) => {
-        try {
-          await onExportPdf({ ...invoicePrintInput, sealSettings: input });
-          if (selectedInvoiceDocument) {
-            updateInvoiceDocumentStatus(selectedInvoiceDocument.id, "発行済");
-          }
-          setToast({
-            title: "請求書PDFを出力しました",
-            description: buildPdfFileName(project.name, "請求書"),
-          });
-        } catch (error) {
-          setToast({
-            title: "PDF出力に失敗しました",
-            description: error instanceof Error ? error.message : "不明なエラー",
-            tone: "error",
-          });
-        } finally {
-          window.setTimeout(() => setToast(null), 3600);
-        }
-      },
+      () => undefined,
     );
+  };
+  const exportInvoicePrintHtml = async () => {
+    try {
+      const exported = await onExportPrintHtml(invoicePrintInput);
+      if (exported === false) return;
+      setToast({
+        title: "印刷用HTMLを書き出しました",
+        description: "保存先フォルダを開きました。HTMLをブラウザで開いて印刷/PDF保存できます。",
+        tone: "success",
+      });
+    } catch (error) {
+      setToast({
+        title: "印刷用HTMLを書き出せません",
+        description: error instanceof Error ? error.message : "保存処理に失敗しました。",
+        tone: "error",
+      });
+    } finally {
+      window.setTimeout(() => setToast(null), 4200);
+    }
+  };
+  const requestInvoicePrintHtmlExport = () => {
+    setExportConfirmOpen(true);
   };
   const deleteProjectInvoiceDocument = (document: InvoiceDocument) => {
     if (!confirmDestructive("削除してよろしいですか？", `${document.documentNumber} を削除します。この操作は元に戻せません。`)) return;
@@ -433,8 +439,7 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
   const registerPaymentForSelectedInvoice = () => {
     if (!selectedInvoiceDocument) return;
     if (nextPaymentAmount <= 0) {
-      setToast({ title: "入金額を入力してください", description: "0円より大きい金額を入力してください。", tone: "error" });
-      window.setTimeout(() => setToast(null), 3000);
+      showRequiredFields(["入金額"]);
       return;
     }
     if (isOverPayment) {
@@ -509,9 +514,16 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
       <div className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
         <div className="flex justify-end border-b border-white/10 p-3">
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" className="gap-2" onClick={() => navigate("/settings?tab=seal")}>
+              印影設定
+            </Button>
             <Button variant="outline" className="gap-2" onClick={openInvoicePrintPreview}>
               <Printer className="size-4" />
-              プレビュー
+              プレビューで確認
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={requestInvoicePrintHtmlExport}>
+              <FileText className="size-4" />
+              印刷用HTMLを書き出す
             </Button>
           </div>
         </div>
@@ -733,7 +745,68 @@ export function InvoiceTab({ project, onOpenPrintPreview, onExportPdf }: Invoice
         <InvoiceTable lines={displayInvoiceLines} />
       </div>
       <ToastMessage toast={toast} onClose={() => setToast(null)} />
+      <PlacementConfirmDialog
+        open={exportConfirmOpen}
+        onCancel={() => setExportConfirmOpen(false)}
+        onPreview={() => {
+          setExportConfirmOpen(false);
+          openInvoicePrintPreview();
+        }}
+        onSealSettings={() => {
+          setExportConfirmOpen(false);
+          navigate("/settings?tab=seal");
+        }}
+        onExport={() => {
+          setExportConfirmOpen(false);
+          void exportInvoicePrintHtml();
+        }}
+      />
+      {validationDialog}
     </motion.section>
+  );
+}
+
+function PlacementConfirmDialog({
+  open,
+  onCancel,
+  onSealSettings,
+  onPreview,
+  onExport,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onSealSettings: () => void;
+  onPreview: () => void;
+  onExport: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onCancel()}>
+      <DialogContent className={`${mainAreaDialogClass} w-[calc(100vw-48px)] max-w-[680px] gap-5 bg-white p-7 text-slate-900 dark:bg-slate-950 dark:text-white`}>
+        <DialogHeader>
+          <DialogTitle>書き出し前の確認</DialogTitle>
+          <DialogDescription className="whitespace-normal break-words text-sm leading-6 text-slate-600 dark:text-slate-300">
+            ロゴ・社判の表示や配置が心配な場合は、プレビューまたは印影設定で確認できます。
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <Button className="h-10 min-w-[120px] rounded-xl px-4" variant="outline" onClick={onCancel}>
+            キャンセル
+          </Button>
+          <Button className="h-10 min-w-[120px] rounded-xl px-4" variant="outline" onClick={onSealSettings}>
+            印影設定
+          </Button>
+          <Button className="h-10 min-w-[140px] rounded-xl px-4" variant="outline" onClick={onPreview}>
+            プレビューで確認
+          </Button>
+          <Button
+            className="h-10 min-w-[160px] rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700 hover:text-white dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-400 dark:hover:text-white"
+            onClick={onExport}
+          >
+            このまま書き出す
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

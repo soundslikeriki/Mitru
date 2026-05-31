@@ -51,7 +51,7 @@ export function ProjectTabs({
   onTabChange,
   onUpdateField,
 }: ProjectTabsProps) {
-  const { exportDocumentPdf, openSealPlacementEditorWindow } = useDocumentExport();
+  const { exportPrintHtml, openSealPlacementEditorWindow } = useDocumentExport();
 
   return (
     <Tabs value={activeTab} onValueChange={onTabChange} className="mt-5">
@@ -92,7 +92,7 @@ export function ProjectTabs({
           <QuoteTab
             project={project}
             onOpenPrintPreview={openSealPlacementEditorWindow}
-            onExportPdf={exportDocumentPdf}
+            onExportPrintHtml={exportPrintHtml}
           />
         </TabSuspense>
       </TabsContent>
@@ -101,7 +101,7 @@ export function ProjectTabs({
           <InvoiceTab
             project={project}
             onOpenPrintPreview={openSealPlacementEditorWindow}
-            onExportPdf={exportDocumentPdf}
+            onExportPrintHtml={exportPrintHtml}
           />
         </TabSuspense>
       </TabsContent>

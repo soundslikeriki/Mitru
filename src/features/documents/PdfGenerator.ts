@@ -32,11 +32,15 @@ import {
   type ProjectSealSettings,
   type TaxSettings,
 } from "@/stores/project-store";
-import { saveBinaryFile } from "@/lib/file-export";
+import { revealFileInFolder, saveBinaryFile, saveTextFileWithPath } from "@/lib/file-export";
 import { loadImageAsset } from "@/lib/image-storage";
 
 type PdfTemplateSettingsState = PdfTemplateSettings;
 type CompanyInfoState = CompanyInfo;
+type PrintDocumentRenderOptions = {
+  includeLogoImage?: boolean;
+  includeSealImage?: boolean;
+};
 
 function getActiveSealImage(companyInfo: CompanyInfoState, settings: ProjectSealSettings) {
   if (!settings.enabled) return "";
@@ -101,7 +105,21 @@ function getDocumentTitle(kind: PrintPreviewInput["kind"]) {
   return "注文書";
 }
 
-async function resolveDocumentImage(value: string) {
+async function loadPdfFontBytes() {
+  const response = await fetch(notoSansJpFontUrl);
+  if (!response.ok) {
+    throw new Error(`PDF用日本語フォントの読み込みに失敗しました (${response.status})`);
+  }
+  return response.arrayBuffer();
+}
+
+function buildPrintDocumentBody(input: PrintPreviewInput, options: PrintDocumentRenderOptions = {}) {
+  if (input.kind === "quote") return buildQuotePdfHtml(input, options);
+  if (input.kind === "invoice") return buildInvoicePdfHtml(input, options);
+  return buildWorkflowPdfHtml(input, options);
+}
+
+export async function resolveDocumentImage(value: string) {
   if (!value) return "";
   try {
     return await loadImageAsset(value);
@@ -151,7 +169,7 @@ export async function exportDocumentPdf(input: PrintPreviewInput) {
   pdfDoc.setSubject(`${input.project.constructionName} ${documentTitle}`);
   pdfDoc.setCreationDate(new Date());
 
-  const fontBytes = await fetch(notoSansJpFontUrl).then((response) => response.arrayBuffer());
+  const fontBytes = await loadPdfFontBytes();
   const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: true });
   if (input.kind === "quote") {
     const pages = paginateQuoteLines(input.lines);
@@ -174,7 +192,7 @@ export async function exportDocumentPdf(input: PrintPreviewInput) {
   }
 
   const pdfBytes = await pdfDoc.save();
-  await savePdfBytes(fileName, pdfBytes);
+  return savePdfBytes(fileName, pdfBytes);
 }
 
 export function exportDeliveryPdf(input: Extract<PrintPreviewInput, { kind: "delivery" }>) {
@@ -208,7 +226,7 @@ export async function exportAllDocumentsPdf(input: {
   pdfDoc.setAuthor(input.companyInfo.legalName || "Mitru");
   pdfDoc.setCreationDate(new Date());
 
-  const fontBytes = await fetch(notoSansJpFontUrl).then((response) => response.arrayBuffer());
+  const fontBytes = await loadPdfFontBytes();
   const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: true });
   const projectById = new Map(input.projects.map((project) => [project.id, project]));
 
@@ -606,8 +624,12 @@ async function drawWorkflowPdfPage(
 async function drawPdfBase(pdfDoc: PDFDocument, page: ReturnType<PDFDocument["addPage"]>, backgroundImage: string) {
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1) });
   if (backgroundImage) {
-    const image = await embedPdfImage(pdfDoc, backgroundImage);
-    drawCoverImage(page, image, 0, 0, 595.28, 841.89);
+    try {
+      const image = await embedPdfImage(pdfDoc, backgroundImage);
+      drawCoverImage(page, image, 0, 0, 595.28, 841.89);
+    } catch (error) {
+      console.warn("[Mitru] PDF背景画像の埋め込みに失敗したためスキップします。", error);
+    }
   }
   page.drawRectangle({ x: 0, y: 0, width: 595.28, height: 841.89, color: rgb(1, 1, 1), opacity: backgroundImage ? 0.08 : 0 });
 }
@@ -622,10 +644,14 @@ async function drawPdfLogo(
   y: number,
 ) {
   if (companyInfo.logoImage) {
-    const logo = await embedPdfImage(pdfDoc, companyInfo.logoImage);
-    const fit = logo.scaleToFit(128, 38);
-    page.drawImage(logo, { x, y: y - fit.height, width: fit.width, height: fit.height });
-    return;
+    try {
+      const logo = await embedPdfImage(pdfDoc, companyInfo.logoImage);
+      const fit = logo.scaleToFit(128, 38);
+      page.drawImage(logo, { x, y: y - fit.height, width: fit.width, height: fit.height });
+      return;
+    } catch (error) {
+      console.warn("[Mitru] PDF会社ロゴの埋め込みに失敗したためテキスト表示に切り替えます。", error);
+    }
   }
   drawPdfText(page, fallback, x, y - 8, 9, font, rgb(0.118, 0.227, 0.541));
 }
@@ -637,18 +663,22 @@ async function drawPdfHeaderLogo(
   settings: ProjectSealSettings,
 ) {
   if (settings.logoEnabled === false || !companyInfo.logoImage) return;
-  const logo = await embedPdfImage(pdfDoc, companyInfo.logoImage);
-  const maxWidth = 118 * (settings.logoScale / 100);
-  const fit = logo.scaleToFit(maxWidth, 44 * (settings.logoScale / 100));
-  const x = (settings.logoX / 1000) * 595.28 - fit.width / 2;
-  const y = 841.89 - (settings.logoY / 1000) * 841.89 - fit.height / 2;
-  page.drawImage(logo, {
-    x,
-    y,
-    width: fit.width,
-    height: fit.height,
-    opacity: settings.logoOpacity,
-  });
+  try {
+    const logo = await embedPdfImage(pdfDoc, companyInfo.logoImage);
+    const maxWidth = 118 * (settings.logoScale / 100);
+    const fit = logo.scaleToFit(maxWidth, 44 * (settings.logoScale / 100));
+    const x = (settings.logoX / 1000) * 595.28 - fit.width / 2;
+    const y = 841.89 - (settings.logoY / 1000) * 841.89 - fit.height / 2;
+    page.drawImage(logo, {
+      x,
+      y,
+      width: fit.width,
+      height: fit.height,
+      opacity: settings.logoOpacity,
+    });
+  } catch (error) {
+    console.warn("[Mitru] PDFヘッダーロゴの埋め込みに失敗したためスキップします。", error);
+  }
 }
 
 async function drawPdfSeal(
@@ -660,17 +690,21 @@ async function drawPdfSeal(
 ) {
   const sealImage = getActiveSealImage(companyInfo, sealSettings);
   if (sealImage) {
-    const seal = await embedPdfImage(pdfDoc, sealImage);
-    const size = templateSettings.sealSize * 0.75 * (sealSettings.scale / 100);
-    const x = (sealSettings.x / 1000) * 595.28 - size / 2;
-    const y = 841.89 - (sealSettings.y / 1000) * 841.89 - size / 2;
-    page.drawImage(seal, {
-      x,
-      y,
-      width: size,
-      height: size,
-      opacity: sealSettings.opacity,
-    });
+    try {
+      const seal = await embedPdfImage(pdfDoc, sealImage);
+      const size = templateSettings.sealSize * 0.75 * (sealSettings.scale / 100);
+      const x = (sealSettings.x / 1000) * 595.28 - size / 2;
+      const y = 841.89 - (sealSettings.y / 1000) * 841.89 - size / 2;
+      page.drawImage(seal, {
+        x,
+        y,
+        width: size,
+        height: size,
+        opacity: sealSettings.opacity,
+      });
+    } catch (error) {
+      console.warn("[Mitru] PDF社判画像の埋め込みに失敗したためスキップします。", error);
+    }
   }
 }
 
@@ -901,7 +935,7 @@ function buildQuotePdfHtml({
   lines: QuotePdfLine[];
   totals: ReturnType<typeof calculateEstimateTotals>;
   taxRate: number;
-}) {
+}, options: PrintDocumentRenderOptions = {}) {
   const issuedAt = meta.issuedAt ?? new Date().toISOString().slice(0, 10);
   const documentNumber = meta.documentNumber ?? project.id.toUpperCase();
   const displayTotal = meta.displayTotal ?? totals.afterTax;
@@ -922,8 +956,8 @@ function buildQuotePdfHtml({
       backgroundImage: templateSettings.quoteBackgroundImage,
       accent: "quote",
       body: `
-      ${buildPdfSeal(companyInfo, templateSettings, sealSettings)}
-      ${buildPdfLogo(companyInfo, sealSettings)}
+      ${options.includeSealImage === false ? "" : buildPdfSeal(companyInfo, templateSettings, sealSettings)}
+      ${options.includeLogoImage === false ? "" : buildPdfLogo(companyInfo, sealSettings)}
       <section class="header">
         <div class="meta">
           <p>発行日 <strong>${formatDate(issuedAt)}</strong></p>
@@ -1007,7 +1041,7 @@ function buildInvoicePdfHtml({
   invoiceTotals: ReturnType<typeof calculateInvoiceTotals>;
   billingSummary?: InvoiceBillingSummary;
   taxRate: number;
-}) {
+}, options: PrintDocumentRenderOptions = {}) {
   const primaryBank = resolveInvoiceBankAccount(companyInfo, invoiceSettings.bankAccountId);
   const pages = paginateInvoiceLines(invoiceLines);
   const resolvedBillingSummary = resolveInvoiceBillingSummary({
@@ -1031,8 +1065,8 @@ function buildInvoicePdfHtml({
       backgroundImage: templateSettings.invoiceBackgroundImage,
       accent: "invoice",
       body: `
-      ${buildPdfSeal(companyInfo, templateSettings, sealSettings)}
-      ${buildPdfLogo(companyInfo, sealSettings)}
+      ${options.includeSealImage === false ? "" : buildPdfSeal(companyInfo, templateSettings, sealSettings)}
+      ${options.includeLogoImage === false ? "" : buildPdfLogo(companyInfo, sealSettings)}
       <section class="header">
         <div class="meta highlight-meta">
           <p>請求番号 <strong>${escapeHtml(invoiceSettings.invoiceNumber)}</strong></p>
@@ -1107,7 +1141,7 @@ function buildWorkflowPdfHtml({
   totals,
   taxRate,
   kind,
-}: Extract<PrintPreviewInput, { kind: "delivery" | "order" }>) {
+}: Extract<PrintPreviewInput, { kind: "delivery" | "order" }>, options: PrintDocumentRenderOptions = {}) {
   const isDelivery = kind === "delivery";
   const documentTitle = isDelivery ? "納品書" : "注文書";
   const primaryLabel = isDelivery ? "納品予定日" : "納期";
@@ -1131,8 +1165,8 @@ function buildWorkflowPdfHtml({
       backgroundImage: templateSettings.quoteBackgroundImage,
       accent: isDelivery ? "delivery" : "order",
       body: `
-      ${buildPdfSeal(companyInfo, templateSettings, sealSettings)}
-      ${buildPdfLogo(companyInfo, sealSettings)}
+      ${options.includeSealImage === false ? "" : buildPdfSeal(companyInfo, templateSettings, sealSettings)}
+      ${options.includeLogoImage === false ? "" : buildPdfLogo(companyInfo, sealSettings)}
       <section class="header">
         <div class="meta ${isDelivery ? "" : "highlight-meta"}">
           <p>発行日 <strong>${escapeHtml(formatDate(issuedAt))}</strong></p>
@@ -1300,12 +1334,7 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
 export async function openPrintPreviewWindow(input: PrintPreviewInput) {
   input = await resolvePrintPreviewInputImages(input);
   const documentTitle = getDocumentTitle(input.kind);
-  const documentHtml =
-    input.kind === "quote"
-      ? buildQuotePdfHtml(input)
-      : input.kind === "invoice"
-        ? buildInvoicePdfHtml(input)
-        : buildWorkflowPdfHtml(input);
+  const documentHtml = buildPrintDocumentBody(input);
   const html = buildPrintPreviewWindowHtml({
     title: `${input.project.name}_${documentTitle}_プレビュー`,
     documentTitle,
@@ -1315,91 +1344,59 @@ export async function openPrintPreviewWindow(input: PrintPreviewInput) {
   await openPrintPreviewWindowHtml(input.kind, html, `${input.project.name}_${documentTitle}_プレビュー`);
 }
 
+export async function exportPrintHtml(input: PrintPreviewInput) {
+  input = await resolvePrintPreviewInputImages(input);
+  const documentTitle = getDocumentTitle(input.kind);
+  const documentHtml = buildPrintDocumentBody(input);
+  const fileName = buildPrintHtmlFileName(input.project.name, documentTitle);
+  const html = buildPrintDocumentWindowHtml({
+    title: `${input.project.name}_${documentTitle}_印刷用`,
+    documentHtml,
+  });
+  const filePath = await saveTextFileWithPath(fileName, html, [{ name: "HTML", extensions: ["html"] }]);
+  if (!filePath) return false;
+
+  try {
+    await revealFileInFolder(filePath);
+  } catch (error) {
+    console.warn("[Mitru] 印刷用HTMLの保存先フォルダを開けませんでした。", error);
+  }
+
+  return true;
+}
+
 export async function openSealPlacementEditorWindow(
   input: PrintPreviewInput,
-  onSave: (settings: ProjectSealSettings) => void,
-  onExportPdf?: (settings: ProjectSealSettings) => Promise<void> | void,
+  _onSave: (settings: ProjectSealSettings) => void,
 ) {
   input = await resolvePrintPreviewInputImages(input);
   const editorId = crypto.randomUUID();
   const documentTitle = getDocumentTitle(input.kind);
-  const fixedSealSettings = {
-    ...input.sealSettings,
-    enabled: true,
-    x: 920,
-    y: 270,
-    scale: 100,
-    opacity: 1,
-  };
-  const editorInput = { ...input, sealSettings: fixedSealSettings } as PrintPreviewInput;
-  const documentHtml =
-    editorInput.kind === "quote"
-      ? buildQuotePdfHtml(editorInput)
-      : editorInput.kind === "invoice"
-        ? buildInvoicePdfHtml(editorInput)
-        : buildWorkflowPdfHtml(editorInput);
+  const editorInput = { ...input, sealSettings: input.sealSettings } as PrintPreviewInput;
+  const documentHtml = buildPrintDocumentBody(editorInput);
   const html = buildSealPlacementEditorWindowHtml({
     title: `${input.project.name}_${documentTitle}_プレビュー`,
     documentTitle,
     documentHtml,
     editorId,
-    settings: fixedSealSettings,
+    settings: input.sealSettings,
     baseSealSize: input.templateSettings.sealSize,
     returnUrl: window.location.href,
   });
 
-  let unlistenTauriEvent: (() => void) | undefined;
-  const cleanupPreviewEventListeners = () => {
-    window.removeEventListener("message", handleMessage);
-    void unlistenTauriEvent?.();
-    unlistenTauriEvent = undefined;
-  };
-  const handleEditorEvent = (data: unknown) => {
-    if (!isPreviewEditorEvent(data, editorId)) return;
-    if (data.type === "mitru-seal-settings-save") {
-      onSave(data.settings);
-      cleanupPreviewEventListeners();
-      return;
-    }
-    if (data.type === "mitru-print-preview-export-pdf") {
-      void onExportPdf?.(data.settings);
-    }
-  };
-  const handleMessage = (event: MessageEvent) => handleEditorEvent(event.data);
-
-  window.addEventListener("message", handleMessage);
-  if (isTauriRuntime()) {
-    try {
-      const { listen } = await import("@tauri-apps/api/event");
-      unlistenTauriEvent = await listen("mitru-print-preview-event", (event) => handleEditorEvent(event.payload));
-    } catch (error) {
-      console.warn("[Mitru] Tauri印刷プレビューイベントの購読に失敗しました。", error);
-    }
-  }
   await openPrintPreviewWindowHtml(input.kind, html, `${input.project.name}_${documentTitle}_プレビュー`);
-}
-
-type PreviewEditorEvent = {
-  type: "mitru-seal-settings-save" | "mitru-print-preview-export-pdf";
-  editorId: string;
-  settings: ProjectSealSettings;
-};
-
-function isPreviewEditorEvent(value: unknown, editorId: string): value is PreviewEditorEvent {
-  if (!value || typeof value !== "object") return false;
-  const payload = value as Partial<PreviewEditorEvent>;
-  return (
-    payload.editorId === editorId &&
-    (payload.type === "mitru-seal-settings-save" || payload.type === "mitru-print-preview-export-pdf") &&
-    Boolean(payload.settings)
-  );
 }
 
 function isTauriRuntime() {
   return typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
 }
 
-async function openPrintPreviewWindowHtml(kind: PrintPreviewInput["kind"], htmlContent: string, title: string) {
+async function openPrintPreviewWindowHtml(
+  kind: PrintPreviewInput["kind"],
+  htmlContent: string,
+  title: string,
+  browserPreviewWindow?: Window | null,
+) {
   if (isTauriRuntime()) {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -1410,19 +1407,25 @@ async function openPrintPreviewWindowHtml(kind: PrintPreviewInput["kind"], htmlC
     }
   }
 
-  openBrowserPrintPreviewWindow(kind, htmlContent);
+  openBrowserPrintPreviewWindow(kind, htmlContent, browserPreviewWindow);
 }
 
-function openBrowserPrintPreviewWindow(kind: PrintPreviewInput["kind"], htmlContent: string) {
+function openBrowserPrintPreviewWindow(
+  kind: PrintPreviewInput["kind"],
+  htmlContent: string,
+  previewWindow?: Window | null,
+) {
   const previewUrl = URL.createObjectURL(new Blob([htmlContent], { type: "text/html;charset=utf-8" }));
-  const previewWindow = window.open(previewUrl, `mitru-${kind}-print-preview`, "width=1320,height=980");
+  const targetWindow = previewWindow ?? window.open(previewUrl, `mitru-${kind}-print-preview`, "width=1320,height=980");
 
-  if (!previewWindow) {
+  if (!targetWindow) {
     window.location.href = previewUrl;
+    window.setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
     return;
   }
 
-  previewWindow.focus();
+  targetWindow.location.href = previewUrl;
+  targetWindow.focus();
   window.setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
 }
 
@@ -1490,45 +1493,6 @@ function buildPrintPreviewWindowHtml({
         flex-wrap: wrap;
         gap: 10px;
         justify-content: flex-end;
-      }
-      .bottom-actions {
-        position: fixed;
-        left: 50%;
-        bottom: 18px;
-        z-index: 35;
-        display: flex;
-        gap: 12px;
-        transform: translateX(-50%);
-        border: 1px solid rgba(255,255,255,.12);
-        border-radius: 16px;
-        background: rgba(15,23,42,.86);
-        padding: 10px;
-        backdrop-filter: blur(18px);
-        box-shadow: 0 22px 56px rgba(0,0,0,.32);
-      }
-      button {
-        height: 40px;
-        border: 1px solid rgba(16,185,129,.34);
-        border-radius: 10px;
-        background: #10b981;
-        color: #ffffff;
-        padding: 0 16px;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 700;
-        cursor: pointer;
-        box-shadow: 0 14px 32px rgba(16,185,129,.20);
-      }
-      button.secondary {
-        border-color: rgba(255,255,255,.12);
-        background: rgba(255,255,255,.07);
-        color: #e2e8f0;
-        box-shadow: none;
-      }
-      button.compact {
-        height: 34px;
-        padding: 0 12px;
-        font-size: 12px;
       }
       .preview-stage {
         display: block;
@@ -1644,15 +1608,86 @@ function buildPrintPreviewWindowHtml({
     <main class="preview-stage">
       <div class="preview-scale"><div class="preview-pages">${documentHtml}</div></div>
     </main>
-    <div class="bottom-actions">
-      <button type="button" onclick="window.print()">PDF出力</button>
-      <button type="button" class="secondary" onclick="window.print()">印刷</button>
-    </div>
     <script>
       window.requestAnimationFrame(function() {
         normalizeRenderedPageBreaks();
       });
     </script>
+  </body>
+</html>`;
+}
+
+function buildPrintDocumentWindowHtml({
+  title,
+  documentHtml,
+}: {
+  title: string;
+  documentHtml: string;
+}) {
+  return `<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; script-src 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      @page { size: A4; margin: 0; }
+      * { box-sizing: border-box; }
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #f8fafc;
+        color: #0f172a;
+        font-family: "Inter", "Noto Sans JP", "Hiragino Sans", "Yu Gothic", Arial, sans-serif;
+      }
+      .print-stage {
+        display: grid;
+        gap: 28px;
+        justify-items: center;
+        padding: 24px;
+      }
+      .pdf-page {
+        box-shadow: 0 18px 48px rgba(15,23,42,.18);
+      }
+      @media print {
+        html,
+        body {
+          width: 210mm;
+          height: 297mm;
+          min-height: 297mm;
+          background: #ffffff !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        .print-stage {
+          display: block !important;
+          width: 210mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        .pdf-page {
+          width: 210mm !important;
+          height: 297mm !important;
+          padding: 15mm !important;
+          margin: 0 !important;
+          box-shadow: none !important;
+          transform: none !important;
+          overflow: hidden !important;
+          break-after: page !important;
+        }
+        .company {
+          right: 15mm !important;
+          bottom: 15mm !important;
+          font-size: 9px !important;
+          line-height: 1.45 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="print-stage">${documentHtml}</main>
   </body>
 </html>`;
 }
@@ -1845,7 +1880,6 @@ function buildSealPlacementEditorWindowHtml({
         position: sticky;
         bottom: 0;
         display: grid;
-        grid-template-columns: 1fr 1fr;
         gap: 10px;
         margin-top: 20px;
         border-top: 1px solid rgba(255,255,255,.10);
@@ -1853,6 +1887,9 @@ function buildSealPlacementEditorWindowHtml({
         padding-top: 18px;
       }
       button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         height: 42px;
         border: 1px solid rgba(16,185,129,.34);
         border-radius: 12px;
@@ -1862,12 +1899,23 @@ function buildSealPlacementEditorWindowHtml({
         font: inherit;
         font-size: 13px;
         font-weight: 800;
+        text-decoration: none;
         cursor: pointer;
       }
       button.secondary {
         border-color: rgba(255,255,255,.14);
         background: rgba(255,255,255,.07);
         color: #e2e8f0;
+      }
+      button.primary-copy {
+        border-color: rgba(16,185,129,.54);
+        background: #059669;
+        color: #ffffff;
+        box-shadow: 0 10px 24px rgba(5,150,105,.22);
+      }
+      button.primary-copy:hover {
+        background: #047857;
+        color: #ffffff;
       }
       .hint {
         margin-top: 16px;
@@ -1879,21 +1927,58 @@ function buildSealPlacementEditorWindowHtml({
         font-size: 12px;
         line-height: 1.7;
       }
+      .save-note {
+        margin: 0;
+        color: #a7f3d0;
+        font-size: 12px;
+        line-height: 1.6;
+        text-align: center;
+      }
+      .save-note.is-success {
+        border: 1px solid rgba(16,185,129,.32);
+        border-radius: 12px;
+        background: rgba(16,185,129,.16);
+        padding: 10px;
+        color: #d1fae5;
+      }
+      .save-note.is-error {
+        border: 1px solid rgba(244,63,94,.32);
+        border-radius: 12px;
+        background: rgba(244,63,94,.12);
+        padding: 10px;
+        color: #fecdd3;
+      }
+      .seal-adjustment-panel[hidden],
+      .copy-fallback[hidden] {
+        display: none !important;
+      }
+      body:not(.seal-adjustment-active) .adjustment-only {
+        display: none !important;
+      }
+      .seal-adjustment-active .seal,
+      .seal-adjustment-active .logo-print {
+        cursor: grab;
+        outline: 2px dashed rgba(16,185,129,.72);
+        outline-offset: 3px;
+      }
+      .seal-adjustment-active .seal.is-dragging,
+      .seal-adjustment-active .logo-print.is-dragging {
+        cursor: grabbing;
+        outline-color: rgba(52,211,153,.95);
+      }
+      .copy-fallback {
+        width: 100%;
+        min-height: 112px;
+        border: 1px solid rgba(255,255,255,.14);
+        border-radius: 12px;
+        background: rgba(15,23,42,.86);
+        color: #e2e8f0;
+        padding: 10px;
+        font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        resize: vertical;
+      }
       .pdf-page {
         box-shadow: 0 26px 70px rgba(0,0,0,.42);
-      }
-      .seal,
-      .seal-fallback,
-      .logo-print {
-        cursor: grab;
-        touch-action: none;
-        outline: 2px dashed rgba(16,185,129,.55);
-        outline-offset: 4px;
-      }
-      .seal:active,
-      .seal-fallback:active,
-      .logo-print:active {
-        cursor: grabbing;
       }
       @media (max-width: 1020px) {
         .editor-shell { grid-template-columns: 1fr; }
@@ -1929,7 +2014,8 @@ function buildSealPlacementEditorWindowHtml({
           break-after: page !important;
         }
         .seal,
-        .seal-fallback {
+        .seal-fallback,
+        .logo-print {
           outline: none !important;
         }
       }
@@ -1940,40 +2026,51 @@ function buildSealPlacementEditorWindowHtml({
       <section class="preview-stage"><div class="preview-pages">${documentHtml}</div></section>
       <aside class="control-panel">
         <h1>${escapeHtml(documentTitle)}プレビュー</h1>
-        <p>A4の印刷イメージを見ながら、会社ロゴと社判の表示・位置・サイズを調整できます。プレビュー上で直接ドラッグできます。</p>
+        <p>ロゴ・社判の最終位置は、この通常プレビューで確認してください。</p>
         <div class="control-group">
-          <div class="control-section">
-            <h2 class="control-section-title">ロゴ調整</h2>
-            <p class="control-section-note">右上の会社ロゴを調整します。</p>
-            <div class="toggle-card">
-              <label class="toggle-row" for="logo-enabled-checkbox">
-                <span>ロゴON/OFF</span>
-                <input id="logo-enabled-checkbox" type="checkbox" />
-              </label>
+          <section class="control-section">
+            <div class="toggle-row">
+              <span>印影配置調整モード</span>
+              <input id="seal-adjustment-mode" type="checkbox" />
             </div>
-            ${buildSealEditorControl("logoX", "ロゴ X座標", 0, 1000, "px")}
-            ${buildSealEditorControl("logoY", "ロゴ Y座標", 0, 1000, "px")}
-            ${buildSealEditorControl("logoScale", "ロゴ サイズ", 40, 180, "%")}
-            ${buildSealEditorControl("logoOpacity", "ロゴ 透明度", 0, 100, "%")}
-          </div>
-          <div class="control-section">
-            <h2 class="control-section-title">社判調整</h2>
-            <p class="control-section-note">文書下部・押印欄付近の社判を調整します。</p>
-            <div class="toggle-card">
-              <label class="toggle-row" for="enabled-checkbox">
-                <span>社判ON/OFF</span>
-                <input id="enabled-checkbox" type="checkbox" />
-              </label>
-            </div>
-            ${buildSealEditorControl("x", "社判 X座標", 0, 1000, "px")}
-            ${buildSealEditorControl("y", "社判 Y座標", 0, 1000, "px")}
-            ${buildSealEditorControl("scale", "社判 サイズ", 50, 150, "%")}
-            ${buildSealEditorControl("opacity", "社判 透明度", 0, 100, "%")}
+            <p class="control-section-note">
+              この調整はプレビュー上だけの一時調整です。保存するには「配置値を表示して選択」でJSON全文をコピーして、設定 &gt; 印影設定 に貼り付けてください。
+            </p>
+          </section>
+          <div id="seal-adjustment-controls" class="seal-adjustment-panel" hidden>
+            <section class="control-section">
+              <h2 class="control-section-title">ロゴ調整</h2>
+              <div class="toggle-card">
+                <label class="toggle-row" for="logo-enabled-checkbox">
+                  <span>ロゴ表示</span>
+                  <input id="logo-enabled-checkbox" type="checkbox" />
+                </label>
+              </div>
+              ${buildPlacementControlHtml("logoX", "X座標", 0, 1000)}
+              ${buildPlacementControlHtml("logoY", "Y座標", 0, 1000)}
+              ${buildPlacementControlHtml("logoScale", "サイズ", 20, 240)}
+              ${buildPlacementControlHtml("logoOpacity", "透明度", 0, 100, "%")}
+            </section>
+            <section class="control-section">
+              <h2 class="control-section-title">社判調整</h2>
+              <div class="toggle-card">
+                <label class="toggle-row" for="enabled-checkbox">
+                  <span>社判表示</span>
+                  <input id="enabled-checkbox" type="checkbox" />
+                </label>
+              </div>
+              ${buildPlacementControlHtml("x", "X座標", 0, 1000)}
+              ${buildPlacementControlHtml("y", "Y座標", 0, 1000)}
+              ${buildPlacementControlHtml("scale", "サイズ", 20, 240)}
+              ${buildPlacementControlHtml("opacity", "透明度", 0, 100, "%")}
+            </section>
           </div>
         </div>
         <div class="actions">
-          <button id="mitru-export-pdf" type="button" onclick="exportPdfFromEditor()">PDF出力</button>
-          <button type="button" class="secondary" onclick="window.print()">印刷</button>
+          <button id="copy-placement-button" type="button" class="primary-copy adjustment-only" onclick="copyPlacementJson()">配置値を表示して選択</button>
+          <button id="reset-placement-button" type="button" class="secondary adjustment-only">調整をリセット</button>
+          <textarea id="copy-fallback" class="copy-fallback" readonly hidden></textarea>
+          <p id="mitru-placement-save-note" class="save-note">調整モードの変更は一時的です。配置値を表示して全文コピーし、設定 &gt; 印影設定 に貼り付けてください。</p>
         </div>
       </aside>
     </main>
@@ -1986,26 +2083,8 @@ function buildSealPlacementEditorWindowHtml({
         opacity: Math.round(settings.opacity * 100),
         logoOpacity: Math.round(settings.logoOpacity * 100),
       })};
+      const originalSettings = JSON.parse(JSON.stringify(settings));
       let activeDrag = null;
-
-      async function invokeTauri(command, args) {
-        const tauriCoreInvoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
-        const tauriInternalInvoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
-        const invoke = tauriCoreInvoke || tauriInternalInvoke;
-        if (typeof invoke !== "function") return false;
-        await invoke(command, args || {});
-        return true;
-      }
-
-      async function emitPreviewEvent(type) {
-        const payload = { type, editorId: EDITOR_ID, settings: currentSettingsPayload() };
-        if (window.opener) {
-          window.opener.postMessage(payload, "*");
-          return true;
-        }
-        return invokeTauri("emit_print_preview_event", { payload });
-      }
-
       function clamp(value, min, max) {
         return Math.max(min, Math.min(max, Number(value) || 0));
       }
@@ -2044,23 +2123,23 @@ function buildSealPlacementEditorWindowHtml({
           if (number) number.textContent = (index + 1) + " / " + pages.length + "ページ";
         });
         applySettings();
-        bindDrag();
       }
 
       function updateInputs() {
-        const enabledInput = document.getElementById("enabled-checkbox");
-        if (enabledInput) enabledInput.checked = settings.enabled !== false;
-        const logoEnabledInput = document.getElementById("logo-enabled-checkbox");
-        if (logoEnabledInput) logoEnabledInput.checked = settings.logoEnabled !== false;
         ["x", "y", "scale", "opacity", "logoX", "logoY", "logoScale", "logoOpacity"].forEach((key) => {
-          document.getElementById(key + "-range").value = String(Math.round(settings[key]));
-          document.getElementById(key + "-number").value = String(Math.round(settings[key]));
+          const range = document.getElementById(key + "-range");
+          const number = document.getElementById(key + "-number");
+          if (range) range.value = String(Math.round(settings[key] ?? 0));
+          if (number) number.value = String(Math.round(settings[key] ?? 0));
         });
+        const enabledCheckbox = document.getElementById("enabled-checkbox");
+        if (enabledCheckbox) enabledCheckbox.checked = settings.enabled === true;
+        const logoEnabledCheckbox = document.getElementById("logo-enabled-checkbox");
+        if (logoEnabledCheckbox) logoEnabledCheckbox.checked = settings.logoEnabled === true;
       }
 
       function applySettings() {
         const seals = sealElements();
-        if (!seals.length) return;
         const size = Math.max(24, BASE_SEAL_SIZE * (settings.scale / 100));
         seals.forEach((seal) => {
           seal.style.display = settings.enabled === false ? "none" : "";
@@ -2087,14 +2166,14 @@ function buildSealPlacementEditorWindowHtml({
       }
 
       function setSetting(key, value) {
-        const ranges = { x: [0, 1000], y: [0, 1000], scale: [50, 150], opacity: [0, 100] };
+        const ranges = { x: [0, 1000], y: [0, 1000], scale: [20, 240], opacity: [0, 100] };
         settings[key] = clamp(value, ranges[key][0], ranges[key][1]);
         updateInputs();
         applySettings();
       }
 
       function setLogoSetting(key, value) {
-        const ranges = { logoX: [0, 1000], logoY: [0, 1000], logoScale: [40, 180], logoOpacity: [0, 100] };
+        const ranges = { logoX: [0, 1000], logoY: [0, 1000], logoScale: [20, 240], logoOpacity: [0, 100] };
         settings[key] = clamp(value, ranges[key][0], ranges[key][1]);
         updateInputs();
         applySettings();
@@ -2112,70 +2191,90 @@ function buildSealPlacementEditorWindowHtml({
         applySettings();
       }
 
-      function currentSettingsPayload() {
-        return {
-          enabled: settings.enabled !== false,
-          sealImage: settings.sealImage || "",
-          x: 920,
-          y: 270,
-          scale: 100,
-          opacity: 1,
-          logoEnabled: settings.logoEnabled !== false,
-          logoX: settings.logoX,
-          logoY: settings.logoY,
-          logoScale: settings.logoScale,
-          logoOpacity: settings.logoOpacity / 100,
-        };
-      }
-
-      async function exportPdfFromEditor() {
-        const exportButton = document.getElementById("mitru-export-pdf");
-        if (exportButton) {
-          exportButton.disabled = true;
-          exportButton.textContent = "PDF保存を開始...";
-        }
-        await emitPreviewEvent("mitru-print-preview-export-pdf");
-          window.setTimeout(function () {
-          if (exportButton) {
-            exportButton.disabled = false;
-            exportButton.textContent = "PDF出力";
-          }
-        }, 1800);
-      }
-
       function bindDrag() {
-        const seals = sealElements();
-        seals.forEach((seal) => {
-          if (seal.dataset.dragBound === "true") return;
-          seal.dataset.dragBound = "true";
-          seal.addEventListener("pointerdown", (event) => {
-          if (event.button !== 0 || event.isPrimary === false) return;
-          const page = seal.closest(".pdf-page");
-          if (!page) return;
-          event.preventDefault();
-          event.stopPropagation();
-          activeDrag = { type: "seal", page, pointerId: event.pointerId };
-          seal.classList.add("is-dragging");
-        });
+        sealElements().forEach((seal) => {
+          seal.addEventListener("pointerdown", (event) => startDrag(event, "seal", seal));
         });
         logoElements().forEach((logo) => {
-          if (logo.dataset.dragBound === "true") return;
-          logo.dataset.dragBound = "true";
-          logo.addEventListener("pointerdown", (event) => {
-          if (event.button !== 0 || event.isPrimary === false) return;
-          const page = logo.closest(".pdf-page");
-          if (!page) return;
-          event.preventDefault();
-          event.stopPropagation();
-          activeDrag = { type: "logo", page, pointerId: event.pointerId };
-          logo.classList.add("is-dragging");
-        });
+          logo.addEventListener("pointerdown", (event) => startDrag(event, "logo", logo));
         });
       }
 
       function clearActiveDrag() {
         document.querySelectorAll(".is-dragging").forEach((node) => node.classList.remove("is-dragging"));
         activeDrag = null;
+      }
+
+      function startDrag(event, type, element) {
+        const adjustmentMode = document.getElementById("seal-adjustment-mode");
+        if (!adjustmentMode?.checked) return;
+        const page = element.closest(".pdf-page");
+        if (!page) return;
+        event.preventDefault();
+        element.classList.add("is-dragging");
+        activeDrag = { type, page, pointerId: event.pointerId };
+        try {
+          element.setPointerCapture(event.pointerId);
+        } catch (_) {
+          // WebView implementations may not support capture for every element.
+        }
+      }
+
+      function setAdjustmentMode(enabled) {
+        document.body.classList.toggle("seal-adjustment-active", Boolean(enabled));
+        const panel = document.getElementById("seal-adjustment-controls");
+        if (panel) panel.hidden = !enabled;
+      }
+
+      function exportPlacementJson() {
+        return JSON.stringify({
+          logoEnabled: settings.logoEnabled === true,
+          logoX: Math.round(clamp(settings.logoX, 0, 1000)),
+          logoY: Math.round(clamp(settings.logoY, 0, 1000)),
+          logoScale: Math.round(clamp(settings.logoScale, 20, 240)),
+          logoOpacity: clamp(settings.logoOpacity, 0, 100) / 100,
+          enabled: settings.enabled === true,
+          x: Math.round(clamp(settings.x, 0, 1000)),
+          y: Math.round(clamp(settings.y, 0, 1000)),
+          scale: Math.round(clamp(settings.scale, 20, 240)),
+          opacity: clamp(settings.opacity, 0, 100) / 100
+        }, null, 2);
+      }
+
+      function showManualCopyFallback(json) {
+        const fallback = document.getElementById("copy-fallback");
+        if (!fallback) return;
+        fallback.value = json;
+        fallback.hidden = false;
+        fallback.focus();
+        fallback.select();
+        try {
+          fallback.setSelectionRange(0, fallback.value.length);
+        } catch (_) {
+          // Some WebView textarea implementations only support select().
+        }
+      }
+
+      function copyPlacementJson() {
+        const json = exportPlacementJson();
+        const note = document.getElementById("mitru-placement-save-note");
+        showManualCopyFallback(json);
+        if (note) {
+          note.classList.remove("is-error");
+          note.classList.add("is-success");
+          note.textContent = "配置値を表示しました。全文選択済みです。⌘Cでコピーして、設定 > 印影設定 に貼り付けてください。";
+        }
+      }
+
+      function resetPlacementDraft() {
+        Object.assign(settings, JSON.parse(JSON.stringify(originalSettings)));
+        updateInputs();
+        applySettings();
+        const note = document.getElementById("mitru-placement-save-note");
+        if (note) {
+          note.classList.remove("is-error");
+          note.textContent = "調整値をプレビュー開始時の配置へ戻しました。";
+        }
       }
 
       document.addEventListener("pointermove", (event) => {
@@ -2196,18 +2295,22 @@ function buildSealPlacementEditorWindowHtml({
       window.addEventListener("blur", clearActiveDrag);
 
       ["x", "y", "scale", "opacity"].forEach((key) => {
-        document.getElementById(key + "-range").addEventListener("input", (event) => setSetting(key, event.target.value));
-        document.getElementById(key + "-number").addEventListener("input", (event) => setSetting(key, event.target.value));
+        document.getElementById(key + "-range")?.addEventListener("input", (event) => setSetting(key, event.target.value));
+        document.getElementById(key + "-number")?.addEventListener("input", (event) => setSetting(key, event.target.value));
       });
       ["logoX", "logoY", "logoScale", "logoOpacity"].forEach((key) => {
-        document.getElementById(key + "-range").addEventListener("input", (event) => setLogoSetting(key, event.target.value));
-        document.getElementById(key + "-number").addEventListener("input", (event) => setLogoSetting(key, event.target.value));
+        document.getElementById(key + "-range")?.addEventListener("input", (event) => setLogoSetting(key, event.target.value));
+        document.getElementById(key + "-number")?.addEventListener("input", (event) => setLogoSetting(key, event.target.value));
       });
-      document.getElementById("enabled-checkbox").addEventListener("change", (event) => setEnabled(event.target.checked));
-      document.getElementById("logo-enabled-checkbox").addEventListener("change", (event) => setLogoEnabled(event.target.checked));
+      document.getElementById("enabled-checkbox")?.addEventListener("change", (event) => setEnabled(event.target.checked));
+      document.getElementById("logo-enabled-checkbox")?.addEventListener("change", (event) => setLogoEnabled(event.target.checked));
+      document.getElementById("seal-adjustment-mode")?.addEventListener("change", (event) => setAdjustmentMode(event.target.checked));
+      document.getElementById("reset-placement-button")?.addEventListener("click", resetPlacementDraft);
+      bindDrag();
 
       updateInputs();
       applySettings();
+      setAdjustmentMode(false);
       window.requestAnimationFrame(() => {
         normalizeRenderedPageBreaks();
       });
@@ -2216,14 +2319,15 @@ function buildSealPlacementEditorWindowHtml({
 </html>`;
 }
 
-function buildSealEditorControl(id: string, label: string, min: number, max: number, unit: string) {
+function buildPlacementControlHtml(key: string, label: string, min: number, max: number, suffix = "") {
   return `
-    <label>
-      <span class="number-row">
-        <span>${escapeHtml(label)}</span>
-        <span><input id="${id}-number" type="number" min="${min}" max="${max}" /> ${escapeHtml(unit)}</span>
-      </span>
-      <input id="${id}-range" type="range" min="${min}" max="${max}" />
+    <label for="${key}-range">
+      <span>${escapeHtml(label)}</span>
+      <input id="${key}-range" type="range" min="${min}" max="${max}" />
+      <div class="number-row">
+        <span>${min}〜${max}${escapeHtml(suffix)}</span>
+        <input id="${key}-number" type="number" min="${min}" max="${max}" />
+      </div>
     </label>
   `;
 }
@@ -2239,13 +2343,11 @@ function buildPdfLogo(companyInfo: CompanyInfoState, settings: ProjectSealSettin
 function buildPdfSeal(companyInfo: CompanyInfoState, templateSettings: PdfTemplateSettingsState, sealSettings: ProjectSealSettings) {
   if (!sealSettings.enabled) return "";
   const sealImage = getActiveSealImage(companyInfo, sealSettings);
+  if (!sealImage) return "";
   const size = Math.max(24, templateSettings.sealSize * (sealSettings.scale / 100));
   const left = sealSettings.x / 10;
   const top = sealSettings.y / 10;
-  if (sealImage) {
-    return `<img class="seal" src="${escapeAttr(sealImage)}" style="left:${left}%;top:${top}%;width:${size}px;height:${size}px;opacity:${sealSettings.opacity};transform:translate(-50%,-50%);" />`;
-  }
-  return `<div class="seal-fallback" style="left:${left}%;top:${top}%;transform:translate(-50%,-50%) rotate(-8deg);">${escapeHtml(companyInfo.shortName)}</div>`;
+  return `<img class="seal" src="${escapeAttr(sealImage)}" style="left:${left}%;top:${top}%;width:${size}px;height:${size}px;opacity:${sealSettings.opacity};transform:translate(-50%,-50%);" />`;
 }
 
 function buildPdfCompanyInlineBlock(companyInfo: CompanyInfoState) {
@@ -2326,11 +2428,15 @@ async function dataUrlToBytes(dataUrl: string) {
 }
 
 async function savePdfBytes(fileName: string, bytes: Uint8Array) {
-  await saveBinaryFile(fileName, bytes, [{ name: "PDF", extensions: ["pdf"] }]);
+  return saveBinaryFile(fileName, bytes, [{ name: "PDF", extensions: ["pdf"] }]);
 }
 
 function buildPdfFileName(projectName: string, documentName: "見積書" | "請求書" | "納品書" | "注文書") {
   return `${safeFileName(projectName)}_${documentName}_${formatDateForFile(new Date())}.pdf`;
+}
+
+function buildPrintHtmlFileName(projectName: string, documentName: "見積書" | "請求書" | "納品書" | "注文書") {
+  return `${safeFileName(projectName)}_${documentName}_印刷用_${formatDateForFile(new Date())}.html`;
 }
 
 function safeFileName(value: string) {

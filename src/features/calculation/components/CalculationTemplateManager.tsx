@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { CalculationTemplate } from "@/stores/project-store";
@@ -63,7 +64,7 @@ export function CalculationTemplateManager({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className={`${mainAreaDialogClass} max-w-4xl`}>
           <DialogHeader>
             <DialogTitle>積算テンプレート</DialogTitle>
             <DialogDescription>

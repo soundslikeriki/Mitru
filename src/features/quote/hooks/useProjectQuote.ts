@@ -6,9 +6,9 @@ import {
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
 import { resolveProjectTaxRate } from "@/lib/tax";
 import {
+  getDocumentSealSettings,
   getProjectCostSettings,
   getProjectQuoteSettings,
-  getProjectSealSettings,
   type Project,
   useProjectStore,
 } from "@/stores/project-store";
@@ -44,7 +44,7 @@ export function useProjectQuote(project: Project) {
   );
   const costSettings = getProjectCostSettings(settingsByProjectId, project.id);
   const quoteSettings = getProjectQuoteSettings(quoteSettingsByProjectId, project.id);
-  const sealSettings = getProjectSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
+  const sealSettings = getDocumentSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
   const recipientInfo = buildDocumentRecipientInfo(project, customers);
   const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const totals = calculateEstimateTotals(

@@ -1,9 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, PlusCircle, Trash2, Upload } from "lucide-react";
-import { ImageAsset } from "@/components/ImageAsset";
+import { ChevronRight, PlusCircle, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { persistImageAssetReference } from "@/lib/image-storage";
 import { type CompanyInfo, useProjectStore } from "@/stores/project-store";
 
 export function CompanyInfoSection() {
@@ -16,20 +14,9 @@ export function CompanyInfoSection() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const shouldShowSaveStatus = hasCompanyInfoContent(companyInfo);
 
-  const handleImage = (field: "logoImage" | "sealImage", file: File | null) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = String(reader.result);
-      const reference = await persistImageAssetReference(dataUrl, `company-${field}`);
-      updateCompanyInfo({ [field]: reference });
-    };
-    reader.readAsDataURL(file);
-  };
-
   return (
     <motion.section
-      className="grid gap-5 xl:grid-cols-[1fr_360px]"
+      className="grid gap-5"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28 }}
@@ -169,46 +156,14 @@ export function CompanyInfoSection() {
         </section>
       </div>
 
-      <aside className="grid h-fit gap-5">
-        <section className="rounded-2xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl shadow-black/20 backdrop-blur-xl">
-          <h3 className="text-lg font-semibold text-white">印影設定（ロゴ・社判）</h3>
-          <p className="mt-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            ロゴ・社判画像は背景を透明にしたPNG形式を強く推奨します。透明化されていないと印刷時に不要な背景が表示されます。
+      {shouldShowSaveStatus && (
+        <section className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.08] p-5">
+          <h3 className="text-sm font-semibold text-emerald-700 dark:text-emerald-200">保存状態</h3>
+          <p className="mt-2 text-xs font-medium text-slate-700 dark:text-slate-300">
+            最終更新: {formatDateOnly(companyInfo.updatedAt)}
           </p>
-          <div className="mt-5 grid gap-4">
-            <div className="grid gap-2">
-              <p className="text-sm font-semibold text-slate-200">ロゴ画像</p>
-              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                見積書・請求書のヘッダーに表示します。位置は印刷プレビュー画面で調整できます。
-              </p>
-              <ImageUploadBox
-                label="ロゴ画像"
-                image={companyInfo.logoImage}
-                onChange={(file) => handleImage("logoImage", file)}
-              />
-            </div>
-            <div className="grid gap-2 border-t border-white/10 pt-4">
-              <p className="text-sm font-semibold text-slate-200">社判画像</p>
-              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                見積書・請求書の押印欄付近に表示します。位置は印刷プレビュー画面で調整できます。
-              </p>
-              <ImageUploadBox
-                label="社判画像"
-                image={companyInfo.sealImage}
-                onChange={(file) => handleImage("sealImage", file)}
-              />
-            </div>
-          </div>
         </section>
-        {shouldShowSaveStatus && (
-          <section className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.08] p-5">
-            <h3 className="text-sm font-semibold text-emerald-700 dark:text-emerald-200">保存状態</h3>
-            <p className="mt-2 text-xs font-medium text-slate-700 dark:text-slate-300">
-              最終更新: {formatDateOnly(companyInfo.updatedAt)}
-            </p>
-          </section>
-        )}
-      </aside>
+      )}
     </motion.section>
   );
 }
@@ -247,41 +202,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
     <label className="grid min-w-0 gap-1.5 text-sm">
       <span className="font-medium text-slate-300">{label}</span>
       {children}
-    </label>
-  );
-}
-
-function ImageUploadBox({
-  label,
-  hint,
-  image,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  image: string;
-  onChange: (file: File | null) => void;
-}) {
-  return (
-    <label className="grid cursor-pointer gap-3 rounded-xl border border-dashed border-white/15 bg-white/[0.04] p-4 text-sm transition hover:border-emerald-400/40 hover:bg-emerald-400/[0.06]">
-      <span className="flex flex-wrap items-baseline gap-2 font-medium text-slate-300">
-        {label}
-        {hint && <span className="text-xs font-normal text-slate-500 dark:text-slate-400">({hint})</span>}
-      </span>
-      {image ? (
-        <ImageAsset src={image} alt={label} className="max-h-28 rounded-lg border border-white/10 object-contain" />
-      ) : (
-        <span className="grid min-h-24 place-items-center rounded-lg border border-white/10 bg-slate-950/45 text-slate-500">
-          <Upload className="mb-2 size-5" />
-          画像を選択
-        </span>
-      )}
-      <input
-        type="file"
-        accept="image/*"
-        className="sr-only"
-        onChange={(event) => onChange(event.target.files?.[0] ?? null)}
-      />
     </label>
   );
 }

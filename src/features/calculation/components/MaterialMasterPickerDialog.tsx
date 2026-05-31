@@ -9,7 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
+import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { getMaterialDisplayName } from "@/features/masters/sections/WorkItemMasterSection";
 import { formatCurrency, formatInputNumber, parseNumericInput } from "@/features/calculation/lib/formatting";
 import {
@@ -38,6 +40,7 @@ export function MaterialMasterPickerDialog({
   const [maker, setMaker] = useState("すべて");
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<MaterialMasterInput>(createDefaultMaterialInput());
+  const { dialog: validationDialog, showRequiredFields } = useValidationNoticeDialog();
   const [recentMaterialIds, setRecentMaterialIds] = useState<string[]>(() =>
     JSON.parse(localStorage.getItem("mitru-recent-material-ids") ?? "[]") as string[],
   );
@@ -116,7 +119,7 @@ export function MaterialMasterPickerDialog({
       note: createForm.note.trim(),
     };
     if ((!normalizedForm.productName && !normalizedForm.productNumber) || !normalizedForm.unit) {
-      window.alert("未入力の情報があります。すべての必須項目を入力してください。");
+      showRequiredFields();
       return;
     }
     const created = createMaterialMaster(normalizedForm);
@@ -126,7 +129,7 @@ export function MaterialMasterPickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
+      <DialogContent className={`${mainAreaDialogClass} max-w-5xl`}>
         <DialogHeader>
           <DialogTitle>材料マスタから追加</DialogTitle>
           <DialogDescription>
@@ -285,6 +288,7 @@ export function MaterialMasterPickerDialog({
             </div>
           )}
         </section>
+        {validationDialog}
       </DialogContent>
     </Dialog>
   );
