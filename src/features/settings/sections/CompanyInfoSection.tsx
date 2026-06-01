@@ -37,6 +37,39 @@ export function CompanyInfoSection() {
             <Field label="担当者名"><Input value={companyInfo.contactName} onChange={(e) => updateCompanyInfo({ contactName: e.target.value })} /></Field>
           </div>
         </section>
+        <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((open) => !open)}
+            className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-white/[0.04]"
+            aria-expanded={detailsOpen}
+          >
+            <div>
+              <h3 className="text-base font-semibold text-white">詳細情報</h3>
+              <p className="mt-1 text-sm text-slate-400">
+                略称、FAX、許可番号、インボイス番号など任意項目です。
+              </p>
+            </div>
+            <ChevronRight className={`size-5 shrink-0 text-slate-500 transition-transform ${detailsOpen ? "rotate-90" : ""}`} />
+          </button>
+          {detailsOpen && (
+            <motion.div
+              className="grid gap-4 border-t border-white/10 p-5 md:grid-cols-2"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              transition={{ duration: 0.22 }}
+            >
+              <Field label="会社名（略称）"><Input value={companyInfo.shortName} onChange={(e) => updateCompanyInfo({ shortName: e.target.value })} /></Field>
+              <Field label="現場用住所"><Input value={companyInfo.siteAddress} onChange={(e) => updateCompanyInfo({ siteAddress: e.target.value })} /></Field>
+              <Field label="FAX"><Input value={companyInfo.fax} onChange={(e) => updateCompanyInfo({ fax: formatJapanesePhoneNumber(e.target.value) })} /></Field>
+              <Field label="役職"><Input value={companyInfo.contactTitle} onChange={(e) => updateCompanyInfo({ contactTitle: e.target.value })} /></Field>
+              <Field label="建設業許可番号"><Input value={companyInfo.constructionLicense} onChange={(e) => updateCompanyInfo({ constructionLicense: e.target.value })} /></Field>
+              <Field label="インボイス登録番号"><Input value={companyInfo.invoiceRegistrationNumber} onChange={(e) => updateCompanyInfo({ invoiceRegistrationNumber: e.target.value })} /></Field>
+              <Field label="メールアドレス"><Input value={companyInfo.email} onChange={(e) => updateCompanyInfo({ email: e.target.value })} /></Field>
+              <Field label="ホームページ"><Input value={companyInfo.website} onChange={(e) => updateCompanyInfo({ website: e.target.value })} /></Field>
+            </motion.div>
+          )}
+        </section>
         <section className="rounded-2xl border border-white/10 bg-slate-950/55 p-5 shadow-2xl shadow-black/20 backdrop-blur-xl">
           <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div>
@@ -120,39 +153,6 @@ export function CompanyInfoSection() {
               </div>
             ))}
           </div>
-        </section>
-        <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
-          <button
-            type="button"
-            onClick={() => setDetailsOpen((open) => !open)}
-            className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-white/[0.04]"
-            aria-expanded={detailsOpen}
-          >
-            <div>
-              <h3 className="text-base font-semibold text-white">詳細情報</h3>
-              <p className="mt-1 text-sm text-slate-400">
-                略称、FAX、許可番号、インボイス番号など任意項目です。
-              </p>
-            </div>
-            <ChevronRight className={`size-5 shrink-0 text-slate-500 transition-transform ${detailsOpen ? "rotate-90" : ""}`} />
-          </button>
-          {detailsOpen && (
-            <motion.div
-              className="grid gap-4 border-t border-white/10 p-5 md:grid-cols-2"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              transition={{ duration: 0.22 }}
-            >
-              <Field label="会社名（略称）"><Input value={companyInfo.shortName} onChange={(e) => updateCompanyInfo({ shortName: e.target.value })} /></Field>
-              <Field label="現場用住所"><Input value={companyInfo.siteAddress} onChange={(e) => updateCompanyInfo({ siteAddress: e.target.value })} /></Field>
-              <Field label="FAX"><Input value={companyInfo.fax} onChange={(e) => updateCompanyInfo({ fax: formatJapanesePhoneNumber(e.target.value) })} /></Field>
-              <Field label="役職"><Input value={companyInfo.contactTitle} onChange={(e) => updateCompanyInfo({ contactTitle: e.target.value })} /></Field>
-              <Field label="建設業許可番号"><Input value={companyInfo.constructionLicense} onChange={(e) => updateCompanyInfo({ constructionLicense: e.target.value })} /></Field>
-              <Field label="インボイス登録番号"><Input value={companyInfo.invoiceRegistrationNumber} onChange={(e) => updateCompanyInfo({ invoiceRegistrationNumber: e.target.value })} /></Field>
-              <Field label="メールアドレス"><Input value={companyInfo.email} onChange={(e) => updateCompanyInfo({ email: e.target.value })} /></Field>
-              <Field label="ホームページ"><Input value={companyInfo.website} onChange={(e) => updateCompanyInfo({ website: e.target.value })} /></Field>
-            </motion.div>
-          )}
         </section>
       </div>
 
