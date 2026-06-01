@@ -292,8 +292,14 @@ export function CloudSyncSection() {
     window.setTimeout(() => setToast(null), 3200);
   };
 
-  const syncSummary = summarizeSyncResults(draft.lastSyncResults);
   const syncHistory = Array.isArray(draft.syncHistory) ? draft.syncHistory : [];
+  const statusSummary = createStatusSummary(
+    draft.lastSyncResults,
+    status,
+    message,
+    Boolean(draft.lastSyncAt) || syncHistory.length > 0,
+    draft.isEnabled,
+  );
   const pendingConflicts = Array.isArray(draft.pendingConflicts) ? draft.pendingConflicts : [];
   const activeConflict = pendingConflicts[0] ?? null;
   const syncProgress = draft.syncProgress ?? {
@@ -577,26 +583,25 @@ export function CloudSyncSection() {
 
         <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-white/10 dark:bg-white/[0.04] dark:shadow-none">
           <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">同期結果</p>
-          <div className="mt-3 grid gap-2 text-sm">
-            <div className="flex min-w-0 items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">成功</span>
-              <span className="min-w-0 max-w-[11rem] truncate text-right font-bold tabular-nums text-emerald-800 dark:text-emerald-200" title={syncSummary.success.toLocaleString("ja-JP")}>
-                {syncSummary.success.toLocaleString("ja-JP")}
-              </span>
+          {statusSummary.hasRun ? (
+            <div className="mt-3 grid gap-2 text-sm">
+              <StatusResultRow label="成功" value={statusSummary.success} tone="success" />
+              {statusSummary.error > 0 ? (
+                <>
+                  <StatusResultRow label="失敗" value={statusSummary.error} tone="error" />
+                  {statusSummary.errorMessage ? (
+                    <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800 dark:border-rose-400/25 dark:bg-rose-400/[0.08] dark:text-rose-200">
+                      {statusSummary.errorMessage}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
             </div>
-            <div className="flex min-w-0 items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">未実行</span>
-              <span className="min-w-0 max-w-[11rem] truncate text-right font-bold tabular-nums text-amber-800 dark:text-amber-200" title={syncSummary.skipped.toLocaleString("ja-JP")}>
-                {syncSummary.skipped.toLocaleString("ja-JP")}
-              </span>
-            </div>
-            <div className="flex min-w-0 items-center justify-between gap-3">
-              <span className="text-xs font-semibold text-rose-700 dark:text-rose-300">失敗</span>
-              <span className="min-w-0 max-w-[11rem] truncate text-right font-bold tabular-nums text-rose-800 dark:text-rose-200" title={syncSummary.error.toLocaleString("ja-JP")}>
-                {syncSummary.error.toLocaleString("ja-JP")}
-              </span>
-            </div>
-          </div>
+          ) : (
+            <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-xs leading-5 text-slate-600 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-400">
+              まだ同期は実行されていません。接続テストまたは手動同期を行うと、ここに結果が表示されます。
+            </p>
+          )}
         </div>
 
         <div className="mt-5 space-y-3 text-sm">
@@ -806,6 +811,51 @@ function summarizeSyncResults(results: CloudSyncSettings["lastSyncResults"]) {
   };
 }
 
+function createStatusSummary(
+  results: CloudSyncSettings["lastSyncResults"],
+  status: ConnectionStatus,
+  message: string,
+  hasSyncExecution: boolean,
+  enabled: boolean,
+) {
+  if (!enabled) {
+    return {
+      hasRun: false,
+      success: 0,
+      error: 0,
+      errorMessage: "",
+    };
+  }
+
+  const summary = summarizeSyncResults(results);
+  const hasSyncResult = summary.success > 0 || summary.error > 0 || hasSyncExecution;
+  const hasConnectionTestResult = Boolean(message) && (status === "success" || status === "error");
+  const success = hasSyncResult ? summary.success : status === "success" && hasConnectionTestResult ? 1 : 0;
+  const error = hasSyncResult ? summary.error : status === "error" && hasConnectionTestResult ? 1 : 0;
+
+  return {
+    hasRun: hasSyncResult || hasConnectionTestResult,
+    success,
+    error,
+    errorMessage: createStatusErrorMessage(results, status, message),
+  };
+}
+
+function createStatusErrorMessage(
+  results: CloudSyncSettings["lastSyncResults"],
+  status: ConnectionStatus,
+  message: string,
+) {
+  const failedMessages = Object.entries(results)
+    .filter(([, result]) => result.status === "error")
+    .map(([key, result]) => `${syncEntityLabel(key)}: ${result.message}`)
+    .join(" / ");
+
+  if (failedMessages) return `原因: ${failedMessages}`;
+  if (status === "error" && message) return `原因: ${message}`;
+  return "";
+}
+
 function createSyncScreenMessage(
   results: CloudSyncSettings["lastSyncResults"],
   label: "全データ同期" | "手動同期",
@@ -930,6 +980,38 @@ function CloudSummaryRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
       <span className="text-slate-500">{label}</span>
       <span className="text-right font-semibold text-white">{value}</span>
+    </div>
+  );
+}
+
+function StatusResultRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "success" | "error";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-emerald-700 dark:text-emerald-300"
+      : "text-rose-700 dark:text-rose-300";
+  const valueClass =
+    tone === "success"
+      ? "text-emerald-800 dark:text-emerald-200"
+      : "text-rose-800 dark:text-rose-200";
+  const formattedValue = value.toLocaleString("ja-JP");
+
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      <span className={`text-xs font-semibold ${toneClass}`}>{label}</span>
+      <span
+        className={`min-w-0 max-w-[11rem] truncate text-right font-bold tabular-nums ${valueClass}`}
+        title={formattedValue}
+      >
+        {formattedValue}
+      </span>
     </div>
   );
 }
