@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   BookOpen,
   Building2,
+  ChevronDown,
   Cloud,
   DatabaseBackup,
   ExternalLink,
@@ -11,6 +12,8 @@ import {
   ShieldCheck,
   Stamp,
 } from "lucide-react";
+import type { ReactNode } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 
 type GuideSection = {
@@ -149,6 +152,20 @@ const faqs = [
 ];
 
 export function HelpPage() {
+  const [openSections, setOpenSections] = useState(() => new Set<string>(["basic"]));
+
+  const toggleSection = (sectionId: string) => {
+    setOpenSections((current) => {
+      const next = new Set(current);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="w-full max-w-none">
       <section className="mb-5 rounded-2xl border border-emerald-500/25 bg-white/90 p-5 shadow-xl shadow-slate-900/5 dark:border-emerald-400/20 dark:bg-emerald-400/[0.08] dark:shadow-2xl dark:shadow-black/10">
@@ -176,49 +193,54 @@ export function HelpPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid gap-4">
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid gap-3.5">
           {guideSections.map((section) => (
-            <GuideCard key={section.id} section={section} />
+            <GuideCard
+              key={section.id}
+              section={section}
+              isOpen={openSections.has(section.id)}
+              onToggle={() => toggleSection(section.id)}
+            />
           ))}
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/55 dark:shadow-2xl dark:shadow-black/20">
-            <div className="mb-4 flex items-center gap-2">
-              <HelpCircle className="size-4 text-emerald-700 dark:text-emerald-300" />
-              <h2 className="text-base font-semibold text-slate-950 dark:text-white">8. よくある困りごと</h2>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
+          <AccordionSection
+            title="8. よくある困りごと"
+            lead="PDF保存、印影表示、Supabase、リセットで迷いやすい点をまとめています。"
+            icon={HelpCircle}
+            isOpen={openSections.has("faq")}
+            onToggle={() => toggleSection("faq")}
+          >
+            <div className="mt-4 grid auto-rows-fr gap-3 md:grid-cols-2">
               {faqs.map((faq) => (
                 <details
                   key={faq.question}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]"
+                  className="min-h-[88px] rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]"
                 >
-                  <summary className="cursor-pointer text-sm font-semibold text-slate-950 dark:text-white">
+                  <summary className="cursor-pointer text-sm font-semibold leading-6 text-slate-950 dark:text-white">
                     {faq.question}
                   </summary>
-                  <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-slate-400">{faq.answer}</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-700 dark:text-slate-400">{faq.answer}</p>
                 </details>
               ))}
             </div>
-          </section>
+          </AccordionSection>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/55 dark:shadow-2xl dark:shadow-black/20">
-            <div className="flex items-start gap-3">
-              <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700 dark:bg-white/[0.06] dark:text-slate-300">
-                <ExternalLink className="size-5" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-slate-950 dark:text-white">9. 外部マニュアル・特設サイトリンク</h2>
-                <p className="mt-2 text-sm leading-7 text-slate-700 dark:text-slate-400">
-                  詳しい画像付き手順は、今後公開予定のオンラインマニュアルで確認できます。公開までは、このヘルプページと各画面の案内を参照してください。
-                </p>
-              </div>
-            </div>
-          </section>
+          <AccordionSection
+            title="9. 外部マニュアル・特設サイトリンク"
+            lead="画像付き手順や詳しいオンラインマニュアルは今後公開予定です。"
+            icon={ExternalLink}
+            isOpen={openSections.has("manual")}
+            onToggle={() => toggleSection("manual")}
+          >
+            <p className="text-sm leading-7 text-slate-700 dark:text-slate-400">
+              詳しい画像付き手順は、今後公開予定のオンラインマニュアルで確認できます。公開までは、このヘルプページと各画面の案内を参照してください。
+            </p>
+          </AccordionSection>
         </div>
 
         <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 dark:border-emerald-400/20 dark:bg-emerald-400/[0.08] dark:shadow-2xl dark:shadow-black/20">
-          <h2 className="text-base font-semibold text-slate-950 dark:text-white">最初に見るべき画面</h2>
+          <h2 className="text-base font-semibold leading-6 text-slate-950 dark:text-white">最初に見るべき画面</h2>
           <div className="mt-4 grid gap-3">
             <HelpLink to="/dashboard" label="ダッシュボード" description="売上・粗利・キャッシュフローを確認" />
             <HelpLink to="/projects" label="案件一覧" description="案件を作成し、各種書類へ進む" />
@@ -231,27 +253,25 @@ export function HelpPage() {
   );
 }
 
-function GuideCard({ section }: { section: GuideSection }) {
+function GuideCard({
+  section,
+  isOpen,
+  onToggle,
+}: {
+  section: GuideSection;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
   const Icon = section.icon;
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/55 dark:shadow-2xl dark:shadow-black/20">
-      <div className="flex items-start gap-3">
-        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-[#1E3A8A]/55 dark:text-emerald-300">
-          <Icon className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-950 dark:text-white">{section.title}</h2>
-          <p className="mt-2 text-sm leading-7 text-slate-700 dark:text-slate-300">{section.lead}</p>
-        </div>
-      </div>
-
+    <AccordionSection title={section.title} lead={section.lead} icon={Icon} isOpen={isOpen} onToggle={onToggle}>
       {section.steps ? (
-        <ol className="mt-4 grid gap-2 md:grid-cols-2">
+        <ol className="mt-4 grid auto-rows-fr gap-3 md:grid-cols-2">
           {section.steps.map((step, index) => (
             <li
               key={step}
-              className="flex gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
+              className="flex min-h-[76px] gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
             >
               <span className="grid size-6 shrink-0 place-items-center rounded-full bg-emerald-600 text-xs font-semibold text-white">
                 {index + 1}
@@ -263,11 +283,11 @@ function GuideCard({ section }: { section: GuideSection }) {
       ) : null}
 
       {section.items ? (
-        <ul className="mt-4 grid gap-2 md:grid-cols-2">
+        <ul className="mt-4 grid auto-rows-fr gap-3 md:grid-cols-2">
           {section.items.map((item) => (
             <li
               key={item}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
+              className="min-h-[68px] rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-300"
             >
               {item}
             </li>
@@ -277,13 +297,54 @@ function GuideCard({ section }: { section: GuideSection }) {
 
       {section.note ? <InfoNote>{section.note}</InfoNote> : null}
       {section.warning ? <WarningNote>{section.warning}</WarningNote> : null}
+    </AccordionSection>
+  );
+}
+
+function AccordionSection({
+  title,
+  lead,
+  icon: Icon,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title: string;
+  lead: string;
+  icon: typeof BookOpen;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-900/5 dark:border-white/10 dark:bg-slate-950/55 dark:shadow-2xl dark:shadow-black/20">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-start gap-4 px-5 py-4 text-left transition hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+        aria-expanded={isOpen}
+      >
+        <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-[#1E3A8A]/55 dark:text-emerald-300">
+          <Icon className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-semibold leading-6 text-slate-950 dark:text-white">{title}</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">{lead}</p>
+        </div>
+        <ChevronDown
+          className={`mt-2 size-5 shrink-0 text-slate-500 transition-transform dark:text-slate-400 ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+      {isOpen ? <div className="border-t border-slate-200 px-5 pb-5 pt-1 dark:border-white/10">{children}</div> : null}
     </article>
   );
 }
 
 function InfoNote({ children }: { children: string }) {
   return (
-    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-7 text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-400/[0.08] dark:text-emerald-100">
+    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-400/[0.08] dark:text-emerald-100">
       {children}
     </div>
   );
@@ -291,7 +352,7 @@ function InfoNote({ children }: { children: string }) {
 
 function WarningNote({ children }: { children: string }) {
   return (
-    <div className="mt-4 flex gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm leading-7 text-amber-950 dark:border-amber-400/25 dark:bg-amber-400/[0.1] dark:text-amber-100">
+    <div className="mt-4 flex gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950 dark:border-amber-400/25 dark:bg-amber-400/[0.1] dark:text-amber-100">
       <AlertTriangle className="mt-0.5 size-4 shrink-0" />
       <span>{children}</span>
     </div>
@@ -302,7 +363,7 @@ function QuickLink({ to, label }: { to: string; label: string }) {
   return (
     <Link
       to={to}
-      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center font-semibold text-slate-700 transition hover:border-emerald-500/50 hover:text-emerald-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-slate-300 dark:hover:border-emerald-400/35 dark:hover:text-white"
+      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-center font-semibold leading-5 text-slate-700 transition hover:border-emerald-500/50 hover:text-emerald-700 dark:border-white/10 dark:bg-white/[0.05] dark:text-slate-300 dark:hover:border-emerald-400/35 dark:hover:text-white"
     >
       {label}
     </Link>
@@ -313,9 +374,9 @@ function HelpLink({ to, label, description }: { to: string; label: string; descr
   return (
     <Link
       to={to}
-      className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-emerald-500/50 hover:bg-emerald-50 dark:border-white/10 dark:bg-white/[0.05] dark:hover:border-emerald-400/35 dark:hover:bg-white/[0.08]"
+      className="min-h-[88px] rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-emerald-500/50 hover:bg-emerald-50 dark:border-white/10 dark:bg-white/[0.05] dark:hover:border-emerald-400/35 dark:hover:bg-white/[0.08]"
     >
-      <p className="text-sm font-semibold text-slate-950 dark:text-white">{label}</p>
+      <p className="text-sm font-semibold leading-6 text-slate-950 dark:text-white">{label}</p>
       <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-400">{description}</p>
     </Link>
   );
