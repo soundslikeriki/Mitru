@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FileText, PlusCircle, Printer, Trash2 } from "lucide-react";
+import { FileDown, FileText, PlusCircle, Printer, Trash2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,6 +23,7 @@ import {
   DocumentHistoryRow,
   DocumentHistorySection,
 } from "@/features/documents/DocumentHistorySection";
+import { exportDocumentPdf } from "@/features/documents/document-exporters";
 import { isDocumentSnapshotBehindCalculation } from "@/features/documents/document-staleness";
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
 import type { PrintPreviewInput, QuotePdfLine } from "@/features/documents/types";
@@ -83,6 +84,7 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
   const estimateDocumentCount = projectEstimateDocuments.length;
   const [selectedEstimateDocumentId, setSelectedEstimateDocumentId] = useState<string | null>(null);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [isExportingQuotePdf, setIsExportingQuotePdf] = useState(false);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
   const costSettings = getProjectCostSettings(settingsByProjectId, project.id);
   const quoteSettings = getProjectQuoteSettings(quoteSettingsByProjectId, project.id);
@@ -262,6 +264,29 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
       window.setTimeout(() => setToast(null), 4200);
     }
   };
+  const exportQuotePdf = async () => {
+    if (isExportingQuotePdf) return;
+    setIsExportingQuotePdf(true);
+    try {
+      const exported = await exportDocumentPdf(quotePrintInput);
+      if (exported === false) return;
+      setToast({
+        title: "PDFを保存しました",
+        description: "見積書PDFを保存しました。",
+        tone: "success",
+      });
+    } catch (error) {
+      console.error("[Mitru] 見積書PDFの保存に失敗しました。", error);
+      setToast({
+        title: "PDFの保存に失敗しました",
+        description: error instanceof Error ? error.message : "見積書PDFを保存できませんでした。",
+        tone: "error",
+      });
+    } finally {
+      setIsExportingQuotePdf(false);
+      window.setTimeout(() => setToast(null), 4200);
+    }
+  };
   const requestQuotePrintHtmlExport = () => {
     setExportConfirmOpen(true);
   };
@@ -290,6 +315,10 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
             <Button variant="outline" className="gap-2" onClick={openQuotePrintPreview}>
               <Printer className="size-4" />
               プレビューで確認
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={() => void exportQuotePdf()} disabled={isExportingQuotePdf}>
+              <FileDown className="size-4" />
+              {isExportingQuotePdf ? "PDF生成中..." : "PDF保存"}
             </Button>
             <Button variant="outline" className="gap-2" onClick={requestQuotePrintHtmlExport}>
               <FileText className="size-4" />
