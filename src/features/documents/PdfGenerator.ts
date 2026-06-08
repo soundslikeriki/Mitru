@@ -1,6 +1,6 @@
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import notoSansJpFontUrl from "@fontsource/noto-sans-jp/files/noto-sans-jp-1-400-normal.woff?url";
+import notoSansCjkJpRegularFontUrl from "@/assets/fonts/NotoSansCJKjp-Regular.otf?url";
 import {
   calculateEstimateTotals,
   calculateInvoiceTotals,
@@ -41,6 +41,8 @@ type PrintDocumentRenderOptions = {
   includeLogoImage?: boolean;
   includeSealImage?: boolean;
 };
+
+let pdfJapaneseFontBytesPromise: Promise<ArrayBuffer> | null = null;
 
 function getActiveSealImage(companyInfo: CompanyInfoState, settings: ProjectSealSettings) {
   if (!settings.enabled) return "";
@@ -106,11 +108,15 @@ function getDocumentTitle(kind: PrintPreviewInput["kind"]) {
 }
 
 async function loadPdfFontBytes() {
-  const response = await fetch(notoSansJpFontUrl);
-  if (!response.ok) {
-    throw new Error(`PDF用日本語フォントの読み込みに失敗しました (${response.status})`);
-  }
-  return response.arrayBuffer();
+  pdfJapaneseFontBytesPromise ??= (async () => {
+    const response = await fetch(notoSansCjkJpRegularFontUrl);
+    if (!response.ok) {
+      throw new Error(`PDF用日本語フォントの読み込みに失敗しました (${response.status})`);
+    }
+    return response.arrayBuffer();
+  })();
+
+  return pdfJapaneseFontBytesPromise;
 }
 
 function buildPrintDocumentBody(input: PrintPreviewInput, options: PrintDocumentRenderOptions = {}) {
