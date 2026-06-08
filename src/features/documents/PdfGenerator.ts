@@ -369,59 +369,60 @@ async function drawQuotePdfPage(
 ) {
   await drawPdfBase(pdfDoc, page, input.templateSettings.quoteBackgroundImage);
   const { project, companyInfo, templateSettings, sealSettings, title, meta, lines, totals } = input;
+  const ink = rgb(0.059, 0.09, 0.165);
   const navy = rgb(0.118, 0.227, 0.541);
-  const emerald = rgb(0.063, 0.725, 0.506);
-  const totalInk = rgb(0.09, 0.16, 0.34);
+  const emerald = rgb(0.059, 0.463, 0.431);
+  const totalInk = rgb(0.09, 0.145, 0.329);
   const slate = rgb(0.278, 0.333, 0.412);
-  const light = rgb(0.89, 0.92, 0.96);
+  const muted = rgb(0.392, 0.455, 0.545);
+  const rule = rgb(0.796, 0.835, 0.882);
   const isLastPage = pageIndex === pageCount - 1;
 
-  drawPdfText(page, `発行日 ${formatDate(meta.issuedAt ?? new Date().toISOString().slice(0, 10))}`, 52, 786, 8, font, slate);
-  drawPdfText(page, `有効期限 ${formatDate(meta.expiresAt)}`, 52, 772, 8, font, slate);
-  drawPdfText(page, `No. ${meta.documentNumber ?? project.id.toUpperCase()}`, 52, 758, 8, font, slate);
-  drawPdfText(page, `案件No. ${project.projectNumber || project.id.toUpperCase()}`, 52, 744, 8, font, slate);
-  drawPdfCenteredText(page, title || "御見積書", 297.64, 762, 28, font, rgb(0.06, 0.09, 0.16));
+  drawQuoteMetaLine(page, "発行日", formatDate(meta.issuedAt ?? new Date().toISOString().slice(0, 10)), 52, 786, font, slate, ink);
+  drawQuoteMetaLine(page, "有効期限", formatDate(meta.expiresAt), 52, 772, font, slate, ink);
+  drawQuoteMetaLine(page, "No.", meta.documentNumber ?? project.id.toUpperCase(), 52, 758, font, slate, ink);
+  drawQuoteMetaLine(page, "案件No.", project.projectNumber || project.id.toUpperCase(), 52, 744, font, slate, ink);
+  drawPdfStrongCenteredText(page, title || "御見積書", 297.64, 762, 27, font, ink, 0.34);
   await drawPdfHeaderLogo(pdfDoc, page, companyInfo, sealSettings);
   drawPdfRightText(page, `${pageIndex + 1} / ${pageCount}ページ`, 543, 36, 8, font, slate);
   await drawPdfSeal(pdfDoc, page, companyInfo, templateSettings, sealSettings);
 
-  drawRule(page, 52, 696, 491, light);
-  drawPdfText(page, "御中", 52, 668, 8, font, slate);
-  drawPdfText(page, getDocumentRecipientName(project, input.recipientInfo), 52, 646, 20, font, rgb(0.06, 0.09, 0.16));
-  drawPdfRecipientDetails(page, font, input.recipientInfo, 52, 628, 210, slate);
+  drawRule(page, 52, 696, 491, rule);
+  drawPdfText(page, "御中", 52, 668, 8.5, font, muted);
+  drawPdfStrongText(page, getDocumentRecipientName(project, input.recipientInfo), 52, 646, 18.5, font, ink, 0.26);
+  drawPdfRecipientDetails(page, font, input.recipientInfo, 52, 626, 210, muted);
   drawPdfCompanyInline(page, font, companyInfo, 543, 670);
-  drawRule(page, 52, 606, 491, light);
+  drawRule(page, 52, 606, 491, rule);
 
-  page.drawRectangle({ x: 52, y: 546, width: 491, height: 48, color: rgb(0.973, 0.98, 0.99), borderColor: rgb(0.86, 0.9, 0.95), borderWidth: 1 });
-  drawPdfText(page, "工事名", 66, 577, 8, font, slate);
-  drawWrappedText(page, project.constructionName, 66, 558, 430, 15, 18, font, navy, 2);
-  drawPdfRightText(page, project.location, 529, 553, 8, font, slate);
+  drawRoundedBox(page, 52, 542, 491, 50, 9, rgb(0.973, 0.98, 0.99), rgb(0.886, 0.91, 0.941), 1);
+  drawPdfText(page, "工事名", 66, 574, 8.2, font, muted);
+  drawWrappedStrongText(page, project.constructionName, 66, 555, 370, 15.5, 18, font, navy, 2, 0.26);
+  drawPdfRightText(page, project.location, 529, 552, 8.2, font, muted);
 
-  page.drawRectangle({ x: 52, y: 492, width: 491, height: 42, color: rgb(0.94, 0.97, 1), borderColor: rgb(0.69, 0.78, 0.93), borderWidth: 1 });
-  drawPdfText(page, "御見積合計額（税込）", 72, 507, 12, font, totalInk);
-  drawPdfRightText(page, formatCurrency(meta.displayTotal ?? totals.afterTax), 523, 504, 22, font, totalInk);
+  drawRoundedBox(page, 52, 490, 491, 42, 8, rgb(0.937, 0.965, 1), rgb(0.749, 0.859, 0.996), 1);
+  drawPdfStrongText(page, "御見積合計額（税込）", 72, 506, 12, font, totalInk, 0.22);
+  drawPdfStrongRightText(page, formatCurrency(meta.displayTotal ?? totals.afterTax), 523, 502, 22.5, font, totalInk, 0.34);
 
-  drawTableHeader(page, font, ["工事項目", "品番・仕様", "数量", "単価", "金額"], [60, 250, 350, 430, 495], 461);
+  drawQuoteTableHeader(page, font, 462, slate);
   let y = 439;
   lines.forEach(({ item, line, unitPrice }) => {
-    const rowHeight = 28;
-    drawWrappedText(page, formatDocumentWorkItemLabel(item), 60, y, 180, 8, 9, font, rgb(0.06, 0.09, 0.16), 2);
-    drawWrappedText(page, formatDocumentSpecification(item), 250, y, 88, 7, 9, font, slate, 2);
-    drawPdfRightText(page, `${formatNumber(item.quantity)}${item.unit}`, 386, y, 8, font, slate);
-    drawPdfRightText(page, formatCurrency(unitPrice), 466, y, 8, font, slate);
-    drawPdfRightText(page, formatCurrency(line.subtotal), 535, y, 8.5, font, emerald);
-    drawRule(page, 60, y - rowHeight + 4, 475, rgb(0.9, 0.93, 0.96));
+    const rowHeight = 27;
+    drawQuoteLineContent(page, item, 60, y, 287, font, ink, navy, muted);
+    drawPdfRightText(page, `${formatNumber(item.quantity)}${item.unit}`, 399, y, 8.2, font, muted);
+    drawPdfRightText(page, formatCurrency(unitPrice), 468, y, 8.2, font, muted);
+    drawPdfStrongRightText(page, formatCurrency(line.subtotal), 535, y, 8.7, font, emerald, 0.18);
+    drawRule(page, 60, y - rowHeight + 4, 475, rgb(0.886, 0.91, 0.941));
     y -= rowHeight;
   });
-  if (lines.length === 0) drawPdfText(page, "積算項目がありません", 230, 450, 10, font, slate);
+  if (lines.length === 0) drawPdfText(page, "積算項目がありません", 230, 450, 10, font, muted);
 
   if (isLastPage) {
-    const notesY = 70;
-    drawBox(page, 52, notesY, 255, 82);
-    drawPdfText(page, "備考", 66, notesY + 58, 9, font, rgb(0.2, 0.25, 0.33));
-    drawWrappedText(page, meta.remarks || "ご不明点がございましたら担当者までお問い合わせください。", 66, notesY + 40, 218, 8, 13, font, slate, 3);
+    const bottomY = Math.max(82, y - 108);
+    drawRoundedBox(page, 52, bottomY, 255, 82, 7, rgb(0.973, 0.98, 0.99), rgb(0.886, 0.91, 0.941), 1);
+    drawPdfStrongText(page, "備考", 66, bottomY + 58, 9, font, rgb(0.2, 0.25, 0.33), 0.16);
+    drawWrappedText(page, meta.remarks || "ご不明点がございましたら担当者までお問い合わせください。", 66, bottomY + 40, 218, 8, 13, font, muted, 3);
 
-    drawTotals(page, font, [
+    drawQuoteTotals(page, font, [
       ["材料費合計", totals.materialCost],
       ["労務費合計", totals.laborCost],
       ["法定福利費", totals.welfareCost],
@@ -429,7 +430,7 @@ async function drawQuotePdfPage(
       ["見積金額（税抜）", totals.beforeTax],
       [formatConsumptionTaxLabel(input.taxRate), totals.tax],
       ["御見積合計額（税込）", totals.afterTax, true],
-    ], 330, 150);
+    ], 330, bottomY + 74);
   }
 }
 
@@ -754,6 +755,20 @@ function drawPdfText(
   page.drawText(text || "-", { x, y, size, font, color });
 }
 
+function drawPdfStrongText(
+  page: ReturnType<PDFDocument["addPage"]>,
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  color = rgb(0.06, 0.09, 0.16),
+  offset = 0.22,
+) {
+  drawPdfText(page, text, x, y, size, font, color);
+  drawPdfText(page, text, x + offset, y, size, font, color);
+}
+
 function drawPdfRightText(
   page: ReturnType<PDFDocument["addPage"]>,
   text: string,
@@ -767,6 +782,20 @@ function drawPdfRightText(
   drawPdfText(page, text, rightX - width, y, size, font, color);
 }
 
+function drawPdfStrongRightText(
+  page: ReturnType<PDFDocument["addPage"]>,
+  text: string,
+  rightX: number,
+  y: number,
+  size: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  color = rgb(0.06, 0.09, 0.16),
+  offset = 0.22,
+) {
+  const width = font.widthOfTextAtSize(text, size);
+  drawPdfStrongText(page, text, rightX - width, y, size, font, color, offset);
+}
+
 function drawPdfCenteredText(
   page: ReturnType<PDFDocument["addPage"]>,
   text: string,
@@ -778,6 +807,20 @@ function drawPdfCenteredText(
 ) {
   const width = font.widthOfTextAtSize(text, size);
   drawPdfText(page, text, centerX - width / 2, y, size, font, color);
+}
+
+function drawPdfStrongCenteredText(
+  page: ReturnType<PDFDocument["addPage"]>,
+  text: string,
+  centerX: number,
+  y: number,
+  size: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  color = rgb(0.06, 0.09, 0.16),
+  offset = 0.22,
+) {
+  const width = font.widthOfTextAtSize(text, size);
+  drawPdfStrongText(page, text, centerX - width / 2, y, size, font, color, offset);
 }
 
 function drawWrappedText(
@@ -794,6 +837,23 @@ function drawWrappedText(
 ) {
   const lines = wrapPdfText(text || "-", maxWidth, size, font).slice(0, maxLines);
   lines.forEach((line, index) => drawPdfText(page, line, x, y - index * lineHeight, size, font, color));
+}
+
+function drawWrappedStrongText(
+  page: ReturnType<PDFDocument["addPage"]>,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  size: number,
+  lineHeight: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  color: ReturnType<typeof rgb>,
+  maxLines: number,
+  offset = 0.22,
+) {
+  const lines = wrapPdfText(text || "-", maxWidth, size, font).slice(0, maxLines);
+  lines.forEach((line, index) => drawPdfStrongText(page, line, x, y - index * lineHeight, size, font, color, offset));
 }
 
 function wrapPdfText(text: string, maxWidth: number, size: number, font: Awaited<ReturnType<PDFDocument["embedFont"]>>) {
@@ -835,6 +895,34 @@ function drawRule(page: ReturnType<PDFDocument["addPage"]>, x: number, y: number
   page.drawLine({ start: { x, y }, end: { x: x + width, y }, thickness: 0.8, color });
 }
 
+function drawRoundedBox(
+  page: ReturnType<PDFDocument["addPage"]>,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+  color: ReturnType<typeof rgb>,
+  borderColor: ReturnType<typeof rgb>,
+  borderWidth = 1,
+) {
+  const r = Math.min(radius, width / 2, height / 2);
+  const path = [
+    `M ${r} 0`,
+    `L ${width - r} 0`,
+    `Q ${width} 0 ${width} ${r}`,
+    `L ${width} ${height - r}`,
+    `Q ${width} ${height} ${width - r} ${height}`,
+    `L ${r} ${height}`,
+    `Q 0 ${height} 0 ${height - r}`,
+    `L 0 ${r}`,
+    `Q 0 0 ${r} 0`,
+    "Z",
+  ].join(" ");
+
+  page.drawSvgPath(path, { x, y, color, borderColor, borderWidth });
+}
+
 function drawBox(page: ReturnType<PDFDocument["addPage"]>, x: number, y: number, width: number, height: number) {
   page.drawRectangle({
     x,
@@ -844,6 +932,77 @@ function drawBox(page: ReturnType<PDFDocument["addPage"]>, x: number, y: number,
     color: rgb(0.973, 0.98, 0.99),
     borderColor: rgb(0.89, 0.92, 0.96),
     borderWidth: 1,
+  });
+}
+
+function drawQuoteMetaLine(
+  page: ReturnType<PDFDocument["addPage"]>,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  labelColor: ReturnType<typeof rgb>,
+  valueColor: ReturnType<typeof rgb>,
+) {
+  drawPdfText(page, `${label} `, x, y, 8.3, font, labelColor);
+  const labelWidth = font.widthOfTextAtSize(`${label} `, 8.3);
+  drawPdfStrongText(page, value || "-", x + labelWidth, y, 8.3, font, valueColor, 0.14);
+}
+
+function drawQuoteTableHeader(
+  page: ReturnType<PDFDocument["addPage"]>,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  y: number,
+  color: ReturnType<typeof rgb>,
+) {
+  drawRule(page, 60, y - 7, 475, rgb(0.796, 0.835, 0.882));
+  drawPdfStrongText(page, "内容", 60, y, 8, font, color, 0.12);
+  drawPdfStrongRightText(page, "数量", 399, y, 8, font, color, 0.12);
+  drawPdfStrongRightText(page, "単価", 468, y, 8, font, color, 0.12);
+  drawPdfStrongRightText(page, "金額", 535, y, 8, font, color, 0.12);
+}
+
+function drawQuoteLineContent(
+  page: ReturnType<PDFDocument["addPage"]>,
+  item: ProjectItem,
+  x: number,
+  y: number,
+  maxWidth: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  ink: ReturnType<typeof rgb>,
+  navy: ReturnType<typeof rgb>,
+  muted: ReturnType<typeof rgb>,
+) {
+  drawWrappedQuoteTitle(page, item, x, y, maxWidth, font, ink, navy);
+  const specification = formatDocumentSpecificationDetail(item);
+  if (specification) {
+    drawWrappedText(page, `品番・仕様: ${specification}`, x, y - 12, maxWidth, 7.2, 8.6, font, muted, 1);
+  }
+}
+
+function drawWrappedQuoteTitle(
+  page: ReturnType<PDFDocument["addPage"]>,
+  item: ProjectItem,
+  x: number,
+  y: number,
+  maxWidth: number,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  ink: ReturnType<typeof rgb>,
+  navy: ReturnType<typeof rgb>,
+) {
+  const label = formatDocumentWorkItemLabel(item);
+  const lines = wrapPdfText(label || "工事項目", maxWidth, 8.2, font).slice(0, 1);
+  lines.forEach((line, index) => {
+    const categoryMatch = line.match(/^(【[^】]+】)(.*)$/);
+    if (!categoryMatch) {
+      drawPdfStrongText(page, line, x, y - index * 9.6, 8.2, font, ink, 0.16);
+      return;
+    }
+
+    const [, category, rest] = categoryMatch;
+    drawPdfStrongText(page, category, x, y - index * 9.6, 8.2, font, navy, 0.16);
+    drawPdfStrongText(page, rest.trimStart(), x + font.widthOfTextAtSize(category, 8.2) + 3, y - index * 9.6, 8.2, font, ink, 0.16);
   });
 }
 
@@ -858,6 +1017,28 @@ function drawTableHeader(
   labels.forEach((label, index) => {
     if (index === 0 || label === "品番・仕様") drawPdfText(page, label, xs[index], y, 8, font, rgb(0.28, 0.33, 0.41));
     else drawPdfRightText(page, label, xs[index] + 36, y, 8, font, rgb(0.28, 0.33, 0.41));
+  });
+}
+
+function drawQuoteTotals(
+  page: ReturnType<PDFDocument["addPage"]>,
+  font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
+  rows: Array<[string, number] | [string, number, boolean]>,
+  x: number,
+  y: number,
+) {
+  rows.forEach(([label, value, strong], index) => {
+    const rowY = y - index * 17;
+    const strongColor = rgb(0.09, 0.145, 0.329);
+    const normalColor = rgb(0.2, 0.255, 0.333);
+    if (strong) {
+      drawPdfStrongText(page, label, x, rowY, 10.2, font, strongColor, 0.16);
+      drawPdfStrongRightText(page, formatCurrency(value), 532, rowY - 1, 13.5, font, strongColor, 0.24);
+    } else {
+      drawPdfText(page, label, x, rowY, 8.5, font, normalColor);
+      drawPdfRightText(page, formatCurrency(value), 532, rowY, 8.5, font, normalColor);
+    }
+    drawRule(page, x, rowY - 5, 202, strong ? strongColor : rgb(0.886, 0.91, 0.941));
   });
 }
 
