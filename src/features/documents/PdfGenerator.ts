@@ -384,7 +384,7 @@ async function drawQuotePdfPage(
   drawQuoteMetaLine(page, "案件No.", project.projectNumber || project.id.toUpperCase(), 52, 744, font, slate, ink);
   drawPdfStrongCenteredText(page, title || "御見積書", 297.64, 762, 27, font, ink, 0.34);
   await drawPdfHeaderLogo(pdfDoc, page, companyInfo, sealSettings);
-  drawPdfRightText(page, `${pageIndex + 1} / ${pageCount}ページ`, 543, 36, 8, font, slate);
+  drawPdfRightText(page, `${pageIndex + 1} / ${pageCount}ページ`, 543, 34, 7.2, font, rgb(0.58, 0.64, 0.72));
   await drawPdfSeal(pdfDoc, page, companyInfo, templateSettings, sealSettings);
 
   drawRule(page, 52, 696, 491, rule);
@@ -920,7 +920,7 @@ function drawRoundedBox(
     "Z",
   ].join(" ");
 
-  page.drawSvgPath(path, { x, y, color, borderColor, borderWidth });
+  page.drawSvgPath(path, { x, y: y + height, color, borderColor, borderWidth });
 }
 
 function drawBox(page: ReturnType<PDFDocument["addPage"]>, x: number, y: number, width: number, height: number) {
