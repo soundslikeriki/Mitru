@@ -1,6 +1,6 @@
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
-import notoSansCjkJpRegularFontUrl from "@/assets/fonts/NotoSansCJKjp-Regular.otf?url";
+import notoSansJpRegularFontUrl from "@/assets/fonts/NotoSansJP-Regular.ttf?url";
 import {
   calculateEstimateTotals,
   calculateInvoiceTotals,
@@ -109,7 +109,7 @@ function getDocumentTitle(kind: PrintPreviewInput["kind"]) {
 
 async function loadPdfFontBytes() {
   pdfJapaneseFontBytesPromise ??= (async () => {
-    const response = await fetch(notoSansCjkJpRegularFontUrl);
+    const response = await fetch(notoSansJpRegularFontUrl);
     if (!response.ok) {
       throw new Error(`PDF用日本語フォントの読み込みに失敗しました (${response.status})`);
     }
@@ -176,7 +176,7 @@ export async function exportDocumentPdf(input: PrintPreviewInput) {
   pdfDoc.setCreationDate(new Date());
 
   const fontBytes = await loadPdfFontBytes();
-  const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: true });
+  const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: false });
   if (input.kind === "quote") {
     const pages = paginateQuoteLines(input.lines);
     for (const [pageIndex, lines] of pages.entries()) {
