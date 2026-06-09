@@ -26,11 +26,11 @@ import {
 import { AppRouter } from "@/features/layout/AppRouter";
 import { ErrorBoundary } from "@/features/layout/ErrorBoundary";
 import { MainLayout } from "@/features/layout/MainLayout";
+import { repairMissingDefaultWorkItemMasters } from "@/features/masters/lib/work-item-master-seed";
 import { ToastMessage, type ToastState } from "@/features/shared/ToastMessage";
 import { isInlineImageDataUrl, persistImageAssetReference, persistImageAssetReferences } from "@/lib/image-storage";
 import { getCurrentUser } from "@/lib/supabase-auth";
 import {
-  defaultInteriorWorkItemMasterInputs,
   samplePortfolioCustomers,
   samplePortfolioEstimateDocuments,
   samplePortfolioInvoiceDocuments,
@@ -46,8 +46,6 @@ import {
 const appVersion = "v0.9.7-beta (限定ベータ)";
 const downloadPageUrl = "https://mitru-app.vercel.app/";
 const localStorageWarningBytes = 4.5 * 1024 * 1024;
-const workItemMastersInitializedKey = "mitru-work-item-masters-initialized-v1";
-const workItemMastersUserManagedKey = "mitru-work-item-masters-user-managed-v1";
 
 function App() {
   return (
@@ -185,7 +183,7 @@ function AppShell() {
   }, [resolvedTheme]);
 
   useEffect(() => {
-    ensureInteriorWorkItemMastersForBrokenSeed();
+    repairMissingDefaultWorkItemMasters();
     if (!localStorage.getItem("mitru-work-master-cost-zero-v1")) {
       useProjectStore.getState().resetWorkItemMasterCosts();
       localStorage.setItem("mitru-work-master-cost-zero-v1", "done");
@@ -281,32 +279,6 @@ function forceLoadLatestSamplePortfolio() {
 
 function omitSampleProjectKeys<T>(record: Record<string, T>, sampleProjectIds: Set<string>) {
   return Object.fromEntries(Object.entries(record).filter(([projectId]) => !sampleProjectIds.has(projectId)));
-}
-
-function ensureInteriorWorkItemMastersForBrokenSeed() {
-  if (localStorage.getItem(workItemMastersUserManagedKey) === "done") return;
-
-  const currentState = useProjectStore.getState();
-  const interiorMasters = currentState.workItemMasters.filter((master) => master.majorCategory === "内装工事");
-  if (currentState.workItemMasters.length > 0 && interiorMasters.length > 0) return;
-
-  defaultInteriorWorkItemMasterInputs.forEach((master, index) => {
-    const latestState = useProjectStore.getState();
-    const exists = latestState.workItemMasters.some(
-      (item) =>
-        item.majorCategory === master.majorCategory &&
-        item.middleCategory === master.middleCategory &&
-        item.name === master.name &&
-        item.unit === master.unit,
-    );
-    if (!exists) {
-      latestState.createWorkItemMaster({
-        ...master,
-        favorite: index < 6,
-      });
-    }
-  });
-  localStorage.setItem(workItemMastersInitializedKey, "done");
 }
 
 async function migrateExistingInlineImagesToIndexedDb() {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { PlusCircle, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 import { Input } from "@/components/ui/input";
 import { useValidationNoticeDialog } from "@/components/ui/validation-notice-dialog";
 import { formatCurrency, formatInputNumber, parseNumericInput } from "@/features/calculation/lib/formatting";
+import { repairMissingDefaultWorkItemMasters } from "@/features/masters/lib/work-item-master-seed";
 import { useProjectStore, type WorkItemMaster, type WorkItemMasterInput } from "@/stores/project-store";
 
 type MasterSelectDialogProps = {
@@ -32,6 +33,11 @@ export function MasterSelectDialog({ open, onOpenChange, onSelect }: MasterSelec
   const [recentMasterIds, setRecentMasterIds] = useState<string[]>(() =>
     JSON.parse(localStorage.getItem("mitru-recent-master-ids") ?? "[]") as string[],
   );
+
+  useEffect(() => {
+    if (open) repairMissingDefaultWorkItemMasters();
+  }, [open]);
+
   const categories = useMemo(
     () => Array.from(new Set(masters.map((master) => master.majorCategory))).sort(),
     [masters],
