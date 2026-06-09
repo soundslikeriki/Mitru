@@ -81,18 +81,19 @@ export function MasterSelectDialog({ open, onOpenChange, onSelect }: MasterSelec
 
   const submitCreateMaster = () => {
     const majorCategory = createForm.majorCategory.trim();
+    const middleCategory = createForm.middleCategory.trim();
     const name = createForm.name.trim();
-    const unit = createForm.unit.trim();
-    if (!majorCategory || !name || !unit) {
+    if (![majorCategory, middleCategory, name].some(Boolean)) {
       showRequiredFields();
       return;
     }
+    const fallbackName = name || middleCategory || majorCategory || "工事項目";
     const created = createWorkItemMaster({
       ...createForm,
-      majorCategory,
-      middleCategory: createForm.middleCategory.trim() || majorCategory,
-      name,
-      unit,
+      majorCategory: majorCategory || middleCategory || fallbackName,
+      middleCategory: middleCategory || majorCategory || fallbackName,
+      name: fallbackName,
+      unit: createForm.unit.trim(),
       note: createForm.note.trim(),
     });
     chooseMaster(created);

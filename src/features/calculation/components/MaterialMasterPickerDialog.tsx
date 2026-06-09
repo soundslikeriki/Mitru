@@ -118,10 +118,18 @@ export function MaterialMasterPickerDialog({
       unit: createForm.unit.trim(),
       note: createForm.note.trim(),
     };
-    if ((!normalizedForm.productName && !normalizedForm.productNumber) || !normalizedForm.unit) {
+    const fallbackProductName =
+      normalizedForm.productName ||
+      normalizedForm.productNumber ||
+      normalizedForm.manufacturer ||
+      normalizedForm.specification ||
+      normalizedForm.category ||
+      "材料";
+    if (![normalizedForm.productName, normalizedForm.productNumber, normalizedForm.manufacturer, normalizedForm.specification, normalizedForm.category].some(Boolean)) {
       showRequiredFields();
       return;
     }
+    normalizedForm.productName = fallbackProductName;
     const created = createMaterialMaster(normalizedForm);
     chooseMaterial(created);
     setCreateOpen(false);

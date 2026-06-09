@@ -2,7 +2,7 @@ import type { Customer, CustomerInput, Project } from "@/stores/project-store";
 
 export const customerTypeOptions = ["すべて", "個人", "法人", "設計事務所", "不動産会社", "その他"] as const;
 export const customerStatusOptions = ["すべて", "新規", "既存"] as const;
-export const requiredFieldsMessage = "未入力の情報があります。すべての必須項目を入力してください。";
+export const requiredFieldsMessage = "少なくとも1項目は入力してください。";
 
 export function blankCustomerInput(): CustomerInput {
   return {

@@ -616,13 +616,20 @@ function WorkItemMasterDialog({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.majorCategory.trim() || !form.middleCategory.trim() || !form.name.trim() || !form.unit.trim()) {
+    const majorCategory = form.majorCategory.trim();
+    const middleCategory = form.middleCategory.trim();
+    const name = form.name.trim();
+    if (![majorCategory, middleCategory, name].some(Boolean)) {
       showRequiredFields();
       return;
     }
+    const fallbackName = name || middleCategory || majorCategory || "工事項目";
     const normalizedForm: WorkItemMasterInput = {
       ...form,
-      middleCategory: form.middleCategory.trim(),
+      majorCategory: majorCategory || middleCategory || fallbackName,
+      middleCategory: middleCategory || majorCategory || fallbackName,
+      name: fallbackName,
+      unit: form.unit.trim(),
     };
     markWorkItemMastersUserManaged();
     if (master) {
@@ -717,6 +724,7 @@ function MaterialMasterDialog({
     event.preventDefault();
     const normalizedForm = {
       ...form,
+      category: form.category,
       productName: form.productName.trim(),
       productNumber: form.productNumber.trim(),
       manufacturer: form.manufacturer.trim(),
@@ -725,14 +733,18 @@ function MaterialMasterDialog({
       note: form.note.trim(),
     };
 
-    if (!normalizedForm.productName && !normalizedForm.productNumber) {
+    const fallbackProductName =
+      normalizedForm.productName ||
+      normalizedForm.productNumber ||
+      normalizedForm.manufacturer ||
+      normalizedForm.specification ||
+      normalizedForm.category ||
+      "材料";
+    if (![normalizedForm.productName, normalizedForm.productNumber, normalizedForm.manufacturer, normalizedForm.specification, normalizedForm.category].some(Boolean)) {
       showRequiredFields();
       return;
     }
-    if (!normalizedForm.unit) {
-      showRequiredFields();
-      return;
-    }
+    normalizedForm.productName = fallbackProductName;
 
     if (material) {
       updateMaterialMaster(material.id, normalizedForm);

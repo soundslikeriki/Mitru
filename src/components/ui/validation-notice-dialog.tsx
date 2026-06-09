@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { mainAreaDialogClass } from "@/components/ui/dialog-layout";
 
-const defaultRequiredFieldsMessage = "未入力の情報があります。すべての必須項目を入力してください。";
+const defaultRequiredFieldsMessage = "少なくとも1項目は入力してください。";
 
 type ValidationNotice = {
   title: string;

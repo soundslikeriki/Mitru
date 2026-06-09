@@ -420,14 +420,31 @@ function ProjectCreateDialog({
     const selectedCustomer = customers.find((customer) => customer.id === form.customerId);
     const effectiveClientName = form.clientName.trim() || selectedCustomer?.name.trim() || "";
     const effectiveClientCompanyName = form.clientCompanyName?.trim() || selectedCustomer?.companyName.trim() || "";
-    if (!form.name.trim() || (!effectiveClientName && !effectiveClientCompanyName) || !form.constructionName.trim() || !form.location.trim() || !form.startDate.trim() || !form.endDate.trim()) {
+    const hasProjectContent = [
+      form.name,
+      form.constructionName,
+      effectiveClientName,
+      effectiveClientCompanyName,
+      form.location,
+    ].some((value) => value.trim().length > 0);
+    if (!hasProjectContent) {
       showRequiredFields();
       return;
     }
+    const fallbackName =
+      form.name.trim() ||
+      form.constructionName.trim() ||
+      effectiveClientCompanyName ||
+      effectiveClientName ||
+      form.location.trim() ||
+      "未設定の案件";
     const project = createProject({
       ...form,
+      name: fallbackName,
       clientName: effectiveClientName,
       clientCompanyName: effectiveClientCompanyName,
+      constructionName: form.constructionName.trim() || fallbackName,
+      location: form.location.trim(),
     });
     setForm({
       customerId: "",
