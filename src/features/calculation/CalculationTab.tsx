@@ -201,12 +201,12 @@ export function CalculationTab({ projectId }: { projectId: string }) {
 
   return (
     <motion.section
-      className="grid w-full min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]"
+      className="grid w-full min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28 }}
     >
-      <div className="grid min-w-0 gap-4">
+      <div className="grid min-w-0 auto-rows-max content-start gap-4">
         <CalculationTemplateManager
           templates={calculationTemplates}
           customerId={project?.customerId ?? null}
