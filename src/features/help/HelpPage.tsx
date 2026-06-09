@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  Activity,
   BookOpen,
   Building2,
   ChevronDown,
@@ -15,6 +16,11 @@ import {
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link } from "react-router";
+import {
+  getWorkMasterCategory,
+  needsDefaultWorkItemMasterRepair,
+} from "@/features/masters/lib/work-item-master-seed";
+import { useProjectStore } from "@/stores/project-store";
 
 type GuideSection = {
   id: string;
@@ -153,6 +159,7 @@ const faqs = [
 
 export function HelpPage() {
   const [openSections, setOpenSections] = useState(() => new Set<string>(["basic"]));
+  const diagnostics = useHelpDiagnostics();
 
   const toggleSection = (sectionId: string) => {
     setOpenSections((current) => {
@@ -237,6 +244,16 @@ export function HelpPage() {
               詳しい画像付き手順は、今後公開予定のオンラインマニュアルで確認できます。公開までは、このヘルプページと各画面の案内を参照してください。
             </p>
           </AccordionSection>
+
+          <AccordionSection
+            title="診断情報"
+            lead="betaサポート用に、環境とデータ状態を読み取り専用で確認できます。"
+            icon={Activity}
+            isOpen={openSections.has("diagnostics")}
+            onToggle={() => toggleSection("diagnostics")}
+          >
+            <DiagnosticsPanel diagnostics={diagnostics} />
+          </AccordionSection>
         </div>
 
         <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-xl shadow-slate-900/5 dark:border-emerald-400/20 dark:bg-emerald-400/[0.08] dark:shadow-2xl dark:shadow-black/20">
@@ -249,6 +266,151 @@ export function HelpPage() {
           </div>
         </aside>
       </section>
+    </div>
+  );
+}
+
+function useHelpDiagnostics() {
+  const customers = useProjectStore((state) => state.customers);
+  const projects = useProjectStore((state) => state.projects);
+  const estimateDocuments = useProjectStore((state) => state.estimateDocuments);
+  const invoiceDocuments = useProjectStore((state) => state.invoiceDocuments);
+  const deliveryDocuments = useProjectStore((state) => state.deliveryDocuments);
+  const orderDocuments = useProjectStore((state) => state.orderDocuments);
+  const workItemMasters = useProjectStore((state) => state.workItemMasters);
+  const materialMasters = useProjectStore((state) => state.materialMasters);
+  const cloudSyncSettings = useProjectStore((state) => state.cloudSyncSettings);
+
+  const workMasterCategories = new Set(workItemMasters.map(getWorkMasterCategory));
+  const nonInteriorCategoryCount = Array.from(workMasterCategories).filter((category) => category !== "内装工事").length;
+  const getStorageFlag = (key: string) => {
+    try {
+      return localStorage.getItem(key) ?? "未設定";
+    } catch {
+      return "取得不可";
+    }
+  };
+
+  return {
+    appVersion: import.meta.env.VITE_MITRU_APP_VERSION || "unknown",
+    buildCommit: import.meta.env.VITE_MITRU_BUILD_COMMIT || "unknown",
+    platform: navigator.platform || "unknown",
+    userAgent: navigator.userAgent || "unknown",
+    devicePixelRatio: window.devicePixelRatio,
+    windowSize: `${window.innerWidth} x ${window.innerHeight}`,
+    workItemMasterCount: workItemMasters.length,
+    workItemCategoryCount: workMasterCategories.size,
+    nonInteriorCategoryCount,
+    seedRepairNeeded: needsDefaultWorkItemMasterRepair(workItemMasters),
+    seedFlags: [
+      {
+        label: "mitru-work-item-masters-initialized-v1",
+        value: getStorageFlag("mitru-work-item-masters-initialized-v1"),
+      },
+      {
+        label: "mitru-work-item-masters-user-managed-v1",
+        value: getStorageFlag("mitru-work-item-masters-user-managed-v1"),
+      },
+      {
+        label: "mitru-work-master-cost-zero-v1",
+        value: getStorageFlag("mitru-work-master-cost-zero-v1"),
+      },
+    ],
+    cloudSyncEnabled: cloudSyncSettings.isEnabled,
+    cloudSyncConnected: cloudSyncSettings.isConnected,
+    cloudAuthState: cloudSyncSettings.authState,
+    dataCounts: [
+      { label: "顧客", value: customers.length },
+      { label: "案件", value: projects.length },
+      { label: "見積", value: estimateDocuments.length },
+      { label: "請求", value: invoiceDocuments.length },
+      { label: "納品", value: deliveryDocuments.length },
+      { label: "注文", value: orderDocuments.length },
+      { label: "工事項目", value: workItemMasters.length },
+      { label: "材料", value: materialMasters.length },
+    ],
+  };
+}
+
+function DiagnosticsPanel({ diagnostics }: { diagnostics: ReturnType<typeof useHelpDiagnostics> }) {
+  return (
+    <div className="mt-4 grid gap-4">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+        <p className="text-sm font-semibold leading-6 text-slate-950 dark:text-white">環境</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          <DiagnosticRow label="アプリバージョン" value={diagnostics.appVersion} />
+          <DiagnosticRow label="build commit hash" value={diagnostics.buildCommit} />
+          <DiagnosticRow label="platform" value={diagnostics.platform} />
+          <DiagnosticRow label="devicePixelRatio" value={String(diagnostics.devicePixelRatio)} />
+          <DiagnosticRow label="window innerWidth / innerHeight" value={diagnostics.windowSize} />
+          <DiagnosticRow label="Supabase同期" value={diagnostics.cloudSyncEnabled ? "ON" : "OFF"} />
+          <DiagnosticRow label="Supabase接続" value={diagnostics.cloudSyncConnected ? "connected" : "not connected"} />
+          <DiagnosticRow label="Supabase authState" value={diagnostics.cloudAuthState} />
+        </div>
+        <div className="mt-3">
+          <DiagnosticRow label="userAgent" value={diagnostics.userAgent} wide />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+        <p className="text-sm font-semibold leading-6 text-slate-950 dark:text-white">工事項目マスタ</p>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          <DiagnosticRow label="工事項目マスタ件数" value={diagnostics.workItemMasterCount.toLocaleString("ja-JP")} />
+          <DiagnosticRow label="工事項目カテゴリ数" value={diagnostics.workItemCategoryCount.toLocaleString("ja-JP")} />
+          <DiagnosticRow label="内装工事以外のカテゴリ件数" value={diagnostics.nonInteriorCategoryCount.toLocaleString("ja-JP")} />
+          <DiagnosticRow label="seed修復が必要そうか" value={diagnostics.seedRepairNeeded ? "はい" : "いいえ"} tone={diagnostics.seedRepairNeeded ? "warning" : "normal"} />
+        </div>
+        <div className="mt-4 grid gap-2">
+          {diagnostics.seedFlags.map((flag) => (
+            <DiagnosticRow key={flag.label} label={flag.label} value={flag.value} wide />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.04]">
+        <p className="text-sm font-semibold leading-6 text-slate-950 dark:text-white">データ件数</p>
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {diagnostics.dataCounts.map((item) => (
+            <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-white/10 dark:bg-slate-950/45">
+              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{item.label}</p>
+              <p className="text-base font-semibold tabular-nums text-slate-950 dark:text-white">
+                {item.value.toLocaleString("ja-JP")}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-950 dark:border-amber-400/25 dark:bg-amber-400/[0.1] dark:text-amber-100">
+        この診断情報は読み取り専用です。ここからデータ修正、seed修復、リセット、同期は実行しません。
+      </p>
+    </div>
+  );
+}
+
+function DiagnosticRow({
+  label,
+  value,
+  wide = false,
+  tone = "normal",
+}: {
+  label: string;
+  value: string;
+  wide?: boolean;
+  tone?: "normal" | "warning";
+}) {
+  return (
+    <div className={`min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-white/10 dark:bg-slate-950/45 ${wide ? "md:col-span-2" : ""}`}>
+      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{label}</p>
+      <p
+        className={`mt-0.5 break-words text-sm font-semibold leading-6 ${
+          tone === "warning"
+            ? "text-amber-700 dark:text-amber-200"
+            : "text-slate-950 dark:text-white"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }

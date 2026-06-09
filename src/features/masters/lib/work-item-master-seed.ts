@@ -145,7 +145,7 @@ export function repairMissingDefaultWorkItemMasters() {
   const currentMasters = state.workItemMasters;
   const hasInitializedFlag = localStorage.getItem(workItemMastersInitializedKey) === "done";
 
-  if (!hasInitializedFlag || shouldRepairDefaultWorkItemMasters(currentMasters)) {
+  if (!hasInitializedFlag || needsDefaultWorkItemMasterRepair(currentMasters)) {
     seedMissingWorkItemMasters(getDefaultWorkItemMasterInputs(), state.createWorkItemMaster);
     localStorage.setItem(workItemMastersInitializedKey, "done");
   }
@@ -184,7 +184,7 @@ export function getWorkMasterCategory(master: WorkItemMaster) {
   return "その他";
 }
 
-function shouldRepairDefaultWorkItemMasters(masters: WorkItemMaster[]) {
+export function needsDefaultWorkItemMasterRepair(masters: WorkItemMaster[]) {
   if (masters.length < 80) return true;
 
   const categories = new Set(masters.map(getWorkMasterCategory));
