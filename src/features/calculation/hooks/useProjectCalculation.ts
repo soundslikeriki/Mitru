@@ -13,6 +13,7 @@ export function useProjectCalculation(projectId: string) {
   const materialMasters = useProjectStore((state) => state.materialMasters);
   const calculationTemplates = useProjectStore((state) => state.calculationTemplates);
   const addProjectItemFromMaster = useProjectStore((state) => state.addProjectItemFromMaster);
+  const addProjectItemFromMaterial = useProjectStore((state) => state.addProjectItemFromMaterial);
   const saveCalculationTemplate = useProjectStore((state) => state.saveCalculationTemplate);
   const applyCalculationTemplate = useProjectStore((state) => state.applyCalculationTemplate);
   const updateProjectItem = useProjectStore((state) => state.updateProjectItem);
@@ -53,6 +54,7 @@ export function useProjectCalculation(projectId: string) {
     projectTaxRate,
     projectTaxRateType,
     addProjectItemFromMaster,
+    addProjectItemFromMaterial,
     saveCalculationTemplate,
     applyCalculationTemplate,
     updateProjectItem,

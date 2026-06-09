@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import {
   createBlankItem,
   createProjectItemFromMaster,
+  createProjectItemFromMaterial,
   createSampleItems,
   defaultCloudSyncSettings,
   defaultCostSettings,
@@ -140,6 +141,7 @@ export const useProjectStore = create<ProjectStore>()(
         {
           createBlankItem,
           createProjectItemFromMaster,
+          createProjectItemFromMaterial,
           createSampleItems,
           defaultCostSettings,
         },

@@ -614,6 +614,7 @@ export type ProjectStore = {
   deleteProject: (id: string) => void;
   addProjectItem: (projectId: string) => void;
   addProjectItemFromMaster: (projectId: string, masterId: string) => ProjectItem | undefined;
+  addProjectItemFromMaterial: (projectId: string, materialId: string) => ProjectItem | undefined;
   addProjectItemFromTemplate: (projectId: string, template: ProjectItemTemplateInput) => ProjectItem;
   saveCalculationTemplate: (projectId: string, input: { name: string; customerId?: string | null }) => CalculationTemplate;
   applyCalculationTemplate: (projectId: string, templateId: string) => ProjectItem[];

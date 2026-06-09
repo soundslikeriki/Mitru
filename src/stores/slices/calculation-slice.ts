@@ -1,5 +1,6 @@
 import type {
   CalculationTemplate,
+  MaterialMaster,
   ProjectCostSettings,
   ProjectItem,
   ProjectItemTemplateInput,
@@ -12,6 +13,7 @@ export const calculationSliceVersion = 1;
 type CalculationSliceDependencies = {
   createBlankItem: (projectId: string) => ProjectItem;
   createProjectItemFromMaster: (projectId: string, master: WorkItemMaster) => ProjectItem;
+  createProjectItemFromMaterial: (projectId: string, material: MaterialMaster) => ProjectItem;
   createSampleItems: (projectId: string) => ProjectItem[];
   defaultCostSettings: ProjectCostSettings;
 };
@@ -21,6 +23,7 @@ export function createCalculationSlice(
   {
     createBlankItem,
     createProjectItemFromMaster,
+    createProjectItemFromMaterial,
     createSampleItems,
     defaultCostSettings,
   }: CalculationSliceDependencies,
@@ -33,6 +36,13 @@ export function createCalculationSlice(
       const master = get().workItemMasters.find((item) => item.id === masterId);
       if (!master) return undefined;
       const item = createProjectItemFromMaster(projectId, master);
+      set({ projectItems: [item, ...get().projectItems] });
+      return item;
+    },
+    addProjectItemFromMaterial: (projectId: string, materialId: string) => {
+      const material = get().materialMasters.find((item) => item.id === materialId);
+      if (!material) return undefined;
+      const item = createProjectItemFromMaterial(projectId, material);
       set({ projectItems: [item, ...get().projectItems] });
       return item;
     },

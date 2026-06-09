@@ -19,6 +19,7 @@ type CalculationTableProps = {
   items: ProjectItem[];
   recentlySelectedItemId: string | null;
   onAddItem: () => void;
+  onAddMaterialItem: () => void;
   onTextChange: (id: string, field: keyof ProjectItem, value: string) => void;
   onNumberChange: (id: string, field: keyof ProjectItem, value: string) => void;
   onTypeChange: (id: string, value: "labor" | "material") => void;
@@ -31,6 +32,7 @@ export function CalculationTable({
   items,
   recentlySelectedItemId,
   onAddItem,
+  onAddMaterialItem,
   onTextChange,
   onNumberChange,
   onTypeChange,
@@ -58,6 +60,10 @@ export function CalculationTable({
           <Button className="gap-2" onClick={onAddItem}>
             <PlusCircle className="size-4" />
             工事項目を追加
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={onAddMaterialItem}>
+            <PlusCircle className="size-4" />
+            材料/商品を追加
           </Button>
         </div>
       </div>
@@ -122,7 +128,7 @@ export function CalculationTable({
             {items.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-4 py-16 text-center text-slate-500">
-                  工事項目がありません。「工事項目を追加」から始められます。
+                  積算項目がありません。「工事項目を追加」または「材料/商品を追加」から始められます。
                 </td>
               </tr>
             )}

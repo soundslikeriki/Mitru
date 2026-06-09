@@ -941,6 +941,66 @@ export function createProjectItemFromMaster(projectId: string, master: WorkItemM
   };
 }
 
+export function createProjectItemFromMaterial(projectId: string, material: MaterialMaster): ProjectItem {
+  const materialName = getMaterialProjectItemName(material);
+  const category = material.category ?? "材料";
+  const unitCost = material.materialUnitCost || 0;
+
+  return {
+    id: `item-${Date.now()}-${material.id}`,
+    projectId,
+    priceModelVersion: 2,
+    itemType: "material",
+    majorCategory: "材料・商品",
+    middleCategory: category,
+    name: materialName,
+    specification: formatMaterialProjectItemSpecification(material),
+    unit: material.unit || "個",
+    quantity: 1,
+    laborProductivity: 0,
+    welfareRate: 0,
+    estimatedLaborProductivity: 0,
+    actualLaborProductivity: 0,
+    laborUnitCost: 0,
+    estimatedLaborUnitCost: 0,
+    actualLaborUnitCost: 0,
+    materialUnitCost: unitCost,
+    baseCost: unitCost || null,
+    markupRate: 1,
+    estimatedUnitCost: unitCost,
+    actualUnitCost: unitCost,
+    actualMaterialCost: 0,
+    actualLaborCost: 0,
+    actualOutsourcingCost: 0,
+    expenseRate: 0,
+    note: "",
+    createdAt: seedNow,
+    updatedAt: seedNow,
+  };
+}
+
+function getMaterialProjectItemName(material: MaterialMaster) {
+  return (
+    material.productName.trim() ||
+    material.productNumber.trim() ||
+    material.manufacturer.trim() ||
+    material.specification.trim() ||
+    material.category ||
+    "材料・商品"
+  );
+}
+
+function formatMaterialProjectItemSpecification(material: MaterialMaster) {
+  return [
+    material.productNumber ? `品番：${material.productNumber}` : "",
+    material.manufacturer ? `メーカー：${material.manufacturer}` : "",
+    material.specification ? `規格：${material.specification}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+}
+
 function normalizeLaborUnit(unit: string) {
   return ["人", "人日", "時間", "日"].includes(unit) ? unit : "人日";
 }

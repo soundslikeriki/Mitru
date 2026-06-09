@@ -28,6 +28,7 @@ export function CalculationTab({ projectId }: { projectId: string }) {
     projectTaxRate,
     projectTaxRateType,
     addProjectItemFromMaster,
+    addProjectItemFromMaterial,
     saveCalculationTemplate,
     applyCalculationTemplate,
     updateProjectItem,
@@ -38,6 +39,7 @@ export function CalculationTab({ projectId }: { projectId: string }) {
   const [masterPickerOpen, setMasterPickerOpen] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [materialPickerMode, setMaterialPickerMode] = useState<"new" | "existing">("existing");
   const [materialTargetItemId, setMaterialTargetItemId] = useState<string | null>(null);
   const [recentlySelectedItemId, setRecentlySelectedItemId] = useState<string | null>(null);
 
@@ -115,7 +117,14 @@ export function CalculationTab({ projectId }: { projectId: string }) {
     setMasterPickerOpen(true);
   };
 
+  const openMaterialPickerForNewItem = () => {
+    setMaterialPickerMode("new");
+    setMaterialTargetItemId(null);
+    setMaterialPickerOpen(true);
+  };
+
   const openMaterialPickerForItem = (itemId: string) => {
+    setMaterialPickerMode("existing");
     setMaterialTargetItemId(itemId);
     setMaterialPickerOpen(true);
   };
@@ -162,6 +171,18 @@ export function CalculationTab({ projectId }: { projectId: string }) {
   };
 
   const applyMaterialToItem = (material: MaterialMaster) => {
+    if (materialPickerMode === "new") {
+      const item = addProjectItemFromMaterial(projectId, material.id);
+      if (item) {
+        markRecentlySelected(item.id);
+        focusCalculationRow(item.id);
+      }
+      setMaterialPickerMode("existing");
+      setMaterialTargetItemId(null);
+      setMaterialPickerOpen(false);
+      return;
+    }
+
     if (!materialTargetItemId) return;
     updateProjectItem(materialTargetItemId, {
       itemType: "material",
@@ -219,6 +240,7 @@ export function CalculationTab({ projectId }: { projectId: string }) {
           items={items}
           recentlySelectedItemId={recentlySelectedItemId}
           onAddItem={openMasterPickerForNewItem}
+          onAddMaterialItem={openMaterialPickerForNewItem}
           onTextChange={updateText}
           onNumberChange={updateNumber}
           onTypeChange={updateItemType}
@@ -251,6 +273,7 @@ export function CalculationTab({ projectId }: { projectId: string }) {
         onOpenChange={(open) => {
           setMaterialPickerOpen(open);
           if (!open) {
+            setMaterialPickerMode("existing");
             setMaterialTargetItemId(null);
           }
         }}
