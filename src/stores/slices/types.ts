@@ -556,6 +556,19 @@ export type ProjectSealSettings = {
   logoOpacity: number;
 };
 
+export type MitruBackupImageAsset = {
+  dataUrl: string;
+  createdAt?: string;
+};
+
+export type BackupImageAssetRestoreResult = {
+  restored: number;
+  skipped: number;
+  warnings: string[];
+  dataRestored: boolean;
+  dataRestoreError?: string;
+};
+
 export type MitruBackupData = {
   app: "mitru";
   version: number;
@@ -582,6 +595,7 @@ export type MitruBackupData = {
   taxSettings: TaxSettings;
   cloudSyncSettings: CloudSyncSettings;
   documentNumberSettings: DocumentNumberSettings;
+  imageAssets?: Record<string, MitruBackupImageAsset>;
 };
 
 export type ProjectStore = {
@@ -703,7 +717,12 @@ export type ProjectStore = {
   lastBackupAt: string;
   markBackupCreated: () => void;
   exportBackupData: () => MitruBackupData;
+  exportBackupDataWithImageAssets: () => Promise<MitruBackupData>;
   restoreBackupData: (data: MitruBackupData, mode: "overwrite" | "merge") => void;
+  restoreBackupDataWithImageAssets: (
+    data: MitruBackupData,
+    mode: "overwrite" | "merge",
+  ) => Promise<BackupImageAssetRestoreResult>;
   resetBusinessDataKeepingMasters: () => void;
 };
 

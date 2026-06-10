@@ -24,7 +24,7 @@ export function DataExportSection() {
   const pdfTemplateSettings = useProjectStore((state) => state.pdfTemplateSettings);
   const taxSettings = useProjectStore((state) => state.taxSettings);
   const documentNumberSettings = useProjectStore((state) => state.documentNumberSettings);
-  const exportBackupData = useProjectStore((state) => state.exportBackupData);
+  const exportBackupDataWithImageAssets = useProjectStore((state) => state.exportBackupDataWithImageAssets);
   const [busy, setBusy] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
@@ -51,7 +51,7 @@ export function DataExportSection() {
   const exportBackupJson = async () => {
     setBusy(true);
     try {
-      const backup = exportBackupData();
+      const backup = await exportBackupDataWithImageAssets();
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const saved = await downloadTextFile(
         `mitru_backup_${timestamp}.json`,
@@ -71,7 +71,7 @@ export function DataExportSection() {
     try {
       const resetAt = new Date().toISOString();
       if (withBackup) {
-        const backup = exportBackupData();
+        const backup = await exportBackupDataWithImageAssets();
         const timestamp = resetAt.replace(/[:.]/g, "-");
         await downloadTextFile(
           `mitru_reset_backup_${timestamp}.json`,

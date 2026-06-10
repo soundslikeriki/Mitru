@@ -1,5 +1,6 @@
 import type { SliceContext } from "./types";
 import type { MitruBackupData } from "./types";
+import { collectImageAssetsForBackup, isIndexedDbImageReference, restoreImageAssetsFromBackup } from "@/lib/image-storage";
 import {
   defaultCloudSyncSettings,
   defaultDocumentNumberSettings,
@@ -15,41 +16,74 @@ type BackupSliceDependencies = {
   projectStoreVersion: number;
 };
 
+function collectBackupImageReferences(data: MitruBackupData) {
+  const references = new Set<string>();
+  const addReference = (value: string) => {
+    if (isIndexedDbImageReference(value)) references.add(value);
+  };
+
+  addReference(data.companyInfo.logoImage);
+  addReference(data.companyInfo.sealImage);
+  addReference(data.pdfTemplateSettings.quoteBackgroundImage);
+  addReference(data.pdfTemplateSettings.invoiceBackgroundImage);
+  Object.values(data.sealSettingsByProjectId).forEach((settings) => addReference(settings.sealImage));
+  data.customers.forEach((customer) => {
+    customer.businessCards.forEach(addReference);
+  });
+
+  return references;
+}
+
+function getRestoreErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "不明なエラー";
+}
+
 export function createBackupSlice(
   { set, get }: SliceContext,
   { migrateProjectStore, projectStoreVersion }: BackupSliceDependencies,
 ) {
+  const createBackupData = (): MitruBackupData => ({
+    app: "mitru",
+    version: 3,
+    storeVersion: projectStoreVersion,
+    exportedAt: new Date().toISOString(),
+    customers: get().customers,
+    projects: get().projects,
+    projectItems: get().projectItems,
+    calculationTemplates: get().calculationTemplates,
+    workItemMasters: get().workItemMasters,
+    materialMasters: get().materialMasters,
+    costSettingsByProjectId: get().costSettingsByProjectId,
+    quoteSettingsByProjectId: get().quoteSettingsByProjectId,
+    invoiceSettingsByProjectId: get().invoiceSettingsByProjectId,
+    invoiceItemsByItemId: get().invoiceItemsByItemId,
+    sealSettingsByProjectId: get().sealSettingsByProjectId,
+    estimateDocuments: get().estimateDocuments,
+    invoiceDocuments: get().invoiceDocuments,
+    deliveryDocuments: get().deliveryDocuments,
+    orderDocuments: get().orderDocuments,
+    billingCloseRecords: get().billingCloseRecords,
+    companyInfo: get().companyInfo,
+    pdfTemplateSettings: get().pdfTemplateSettings,
+    taxSettings: get().taxSettings,
+    cloudSyncSettings: get().cloudSyncSettings,
+    documentNumberSettings: get().documentNumberSettings,
+  });
+
   return {
     markBackupCreated: () => {
       set({ lastBackupAt: new Date().toISOString() });
     },
-    exportBackupData: (): MitruBackupData => ({
-      app: "mitru",
-      version: 2,
-      storeVersion: projectStoreVersion,
-      exportedAt: new Date().toISOString(),
-      customers: get().customers,
-      projects: get().projects,
-      projectItems: get().projectItems,
-      calculationTemplates: get().calculationTemplates,
-      workItemMasters: get().workItemMasters,
-      materialMasters: get().materialMasters,
-      costSettingsByProjectId: get().costSettingsByProjectId,
-      quoteSettingsByProjectId: get().quoteSettingsByProjectId,
-      invoiceSettingsByProjectId: get().invoiceSettingsByProjectId,
-      invoiceItemsByItemId: get().invoiceItemsByItemId,
-      sealSettingsByProjectId: get().sealSettingsByProjectId,
-      estimateDocuments: get().estimateDocuments,
-      invoiceDocuments: get().invoiceDocuments,
-      deliveryDocuments: get().deliveryDocuments,
-      orderDocuments: get().orderDocuments,
-      billingCloseRecords: get().billingCloseRecords,
-      companyInfo: get().companyInfo,
-      pdfTemplateSettings: get().pdfTemplateSettings,
-      taxSettings: get().taxSettings,
-      cloudSyncSettings: get().cloudSyncSettings,
-      documentNumberSettings: get().documentNumberSettings,
-    }),
+    exportBackupData: createBackupData,
+    exportBackupDataWithImageAssets: async () => {
+      const backup = createBackupData();
+      const { imageAssets } = await collectImageAssetsForBackup(collectBackupImageReferences(backup));
+      if (Object.keys(imageAssets).length === 0) return backup;
+      return {
+        ...backup,
+        imageAssets,
+      };
+    },
     restoreBackupData: (data: MitruBackupData, mode: "overwrite" | "merge") => {
       if (data.app && data.app !== "mitru") {
         throw new Error("Mitru用のバックアップファイルではありません。");
@@ -116,6 +150,22 @@ export function createBackupSlice(
         cloudSyncSettings: source.cloudSyncSettings ?? get().cloudSyncSettings,
         documentNumberSettings: source.documentNumberSettings ?? get().documentNumberSettings,
       });
+    },
+    restoreBackupDataWithImageAssets: async (data: MitruBackupData, mode: "overwrite" | "merge") => {
+      const imageResult = await restoreImageAssetsFromBackup(data.imageAssets);
+      try {
+        get().restoreBackupData(data, mode);
+        return {
+          ...imageResult,
+          dataRestored: true,
+        };
+      } catch (error) {
+        return {
+          ...imageResult,
+          dataRestored: false,
+          dataRestoreError: getRestoreErrorMessage(error),
+        };
+      }
     },
     resetBusinessDataKeepingMasters: () => {
       set({
