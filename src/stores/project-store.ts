@@ -102,6 +102,7 @@ import type {
 } from "./slices/types";
 
 export const documentSealSettingsKey = "__mitru-document-seal-settings__";
+export const projectStoreStorage = createThrottledStateStorage(createSafeLocalStorage(), 300);
 
 export const useProjectStore = create<ProjectStore>()(
   persist(
@@ -179,7 +180,7 @@ export const useProjectStore = create<ProjectStore>()(
     }),
     {
       name: "mitru-local-store",
-      storage: createJSONStorage(() => createThrottledStateStorage(createSafeLocalStorage(), 300)),
+      storage: createJSONStorage(() => projectStoreStorage),
       version: projectStoreVersion,
       migrate: migrateProjectStore,
       partialize: partializeProjectStore,

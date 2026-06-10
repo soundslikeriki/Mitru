@@ -65,18 +65,22 @@ const samplePortfolioProjectIds = new Set(samplePortfolioProjects.map((project) 
 const samplePortfolioEstimateDocumentIds = new Set(samplePortfolioEstimateDocuments.map((document) => document.id));
 const samplePortfolioInvoiceDocumentIds = new Set(samplePortfolioInvoiceDocuments.map((document) => document.id));
 
-function notifyStorageWarning(description: string) {
+function notifyStorageWarning(description: string, title = "ローカル保存に失敗しました") {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent("mitru-storage-warning", {
       detail: {
-        title: "ローカル保存に失敗しました",
+        title,
         description,
         tone: "error",
       },
     }),
   );
 }
+
+export type FlushableStateStorage = StateStorage & {
+  flushAll: () => void;
+};
 
 export const slicePersistVersions = {
   customer: customerSliceVersion,
@@ -538,7 +542,20 @@ export function createSafeLocalStorage(): StateStorage {
   };
 }
 
-export function createThrottledStateStorage(storage: StateStorage, delayMs = 300): StateStorage {
+const storageSizeWarningLength = 4 * 1024 * 1024;
+let storageSizeWarningShownThisSession = false;
+
+function maybeNotifyStorageSizeWarning(value: string) {
+  // value.length is an approximate early warning signal, not an exact byte count.
+  if (storageSizeWarningShownThisSession || value.length < storageSizeWarningLength) return;
+  storageSizeWarningShownThisSession = true;
+  notifyStorageWarning(
+    "保存データが4MBを超えています。アプリ設定のデータ出力でバックアップを作成してください。",
+    "保存データが大きくなっています",
+  );
+}
+
+export function createThrottledStateStorage(storage: StateStorage, delayMs = 300): FlushableStateStorage {
   const pendingWrites = new Map<string, string>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -557,6 +574,7 @@ export function createThrottledStateStorage(storage: StateStorage, delayMs = 300
       return storage.getItem(name);
     },
     setItem: (name, value) => {
+      maybeNotifyStorageSizeWarning(value);
       pendingWrites.set(name, value);
       const currentTimer = timers.get(name);
       if (currentTimer) clearTimeout(currentTimer);
@@ -571,6 +589,25 @@ export function createThrottledStateStorage(storage: StateStorage, delayMs = 300
       timers.delete(name);
       pendingWrites.delete(name);
       storage.removeItem(name);
+    },
+    flushAll: () => {
+      const entries = Array.from(pendingWrites.entries());
+      pendingWrites.clear();
+      for (const timer of timers.values()) {
+        clearTimeout(timer);
+      }
+      timers.clear();
+      let firstError: unknown;
+      for (const [name, value] of entries) {
+        try {
+          storage.setItem(name, value);
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+      if (firstError) {
+        throw firstError;
+      }
     },
   };
 }

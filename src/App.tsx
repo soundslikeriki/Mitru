@@ -40,6 +40,7 @@ import {
 import { useThemeStore } from "@/stores/theme-store";
 import {
   type CompanyInfo,
+  projectStoreStorage,
   useProjectStore,
 } from "@/stores/project-store";
 
@@ -117,6 +118,21 @@ function AppShell() {
     void refreshSupabaseUserOnStartup();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const flushPendingLocalStorage = () => {
+      projectStoreStorage.flushAll();
+    };
+
+    window.addEventListener("pagehide", flushPendingLocalStorage);
+    window.addEventListener("beforeunload", flushPendingLocalStorage);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingLocalStorage);
+      window.removeEventListener("beforeunload", flushPendingLocalStorage);
     };
   }, []);
 
