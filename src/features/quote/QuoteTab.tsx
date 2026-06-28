@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { FileDown, FileText, PlusCircle, Printer, Trash2 } from "lucide-react";
+import { Crosshair, FileDown, FileSearch, FileText, PlusCircle, Printer, Trash2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -23,12 +23,13 @@ import {
   DocumentHistoryRow,
   DocumentHistorySection,
 } from "@/features/documents/DocumentHistorySection";
-import { exportDocumentPdf } from "@/features/documents/document-exporters";
+import { exportDocumentPdf, openQuotePdfPreviewWindow } from "@/features/documents/document-exporters";
 import { isDocumentSnapshotBehindCalculation } from "@/features/documents/document-staleness";
 import { buildDocumentRecipientInfo } from "@/features/documents/document-helpers";
 import type { PrintPreviewInput, QuotePdfLine } from "@/features/documents/types";
 import { ToastMessage } from "@/features/shared/ToastMessage";
 import {
+  documentSealSettingsKey,
   getDocumentSealSettings,
   getProjectCostSettings,
   getProjectQuoteSettings,
@@ -49,6 +50,11 @@ type QuoteTabProps = {
 };
 
 const estimateStatusOptions: EstimateDocumentStatus[] = ["下書き", "発行済", "失効"];
+const QuotePdfCanvasPreview = lazy(() =>
+  import("@/features/documents/components/QuotePdfCanvasPreview").then((module) => ({
+    default: module.QuotePdfCanvasPreview,
+  })),
+);
 
 export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: QuoteTabProps) {
   const navigate = useNavigate();
@@ -61,6 +67,7 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
   const settingsByProjectId = useProjectStore((state) => state.costSettingsByProjectId);
   const quoteSettingsByProjectId = useProjectStore((state) => state.quoteSettingsByProjectId);
   const updateQuoteSettings = useProjectStore((state) => state.updateQuoteSettings);
+  const updateProjectSealSettings = useProjectStore((state) => state.updateProjectSealSettings);
   const allCustomers = useProjectStore((state) => state.customers);
   const allEstimateDocuments = useProjectStore((state) => state.estimateDocuments);
   const createEstimateDocument = useProjectStore((state) => state.createEstimateDocument);
@@ -84,12 +91,17 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
   const estimateDocumentCount = projectEstimateDocuments.length;
   const [selectedEstimateDocumentId, setSelectedEstimateDocumentId] = useState<string | null>(null);
   const [exportConfirmOpen, setExportConfirmOpen] = useState(false);
+  const [placementPreviewOpen, setPlacementPreviewOpen] = useState(false);
+  const [isOpeningQuotePdfPreview, setIsOpeningQuotePdfPreview] = useState(false);
   const [isExportingQuotePdf, setIsExportingQuotePdf] = useState(false);
   const [toast, setToast] = useState<{ title: string; description: string; tone?: "success" | "error" } | null>(null);
   const costSettings = getProjectCostSettings(settingsByProjectId, project.id);
   const quoteSettings = getProjectQuoteSettings(quoteSettingsByProjectId, project.id);
-  const sealSettings = getDocumentSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage);
-  const recipientInfo = buildDocumentRecipientInfo(project, customers);
+  const sealSettings = useMemo(
+    () => getDocumentSealSettings(sealSettingsByProjectId, project.id, companyInfo.sealImage),
+    [sealSettingsByProjectId, project.id, companyInfo.sealImage],
+  );
+  const recipientInfo = useMemo(() => buildDocumentRecipientInfo(project, customers), [project, customers]);
   const projectTaxRate = resolveProjectTaxRate(project.taxRateType, taxSettings.standardTaxRate);
   const totals = calculateEstimateTotals(
     items,
@@ -99,14 +111,18 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
     taxSettings.taxRoundingMode,
     taxSettings.totalRoundingMode,
   );
-  const quoteLines = items.map((item) => {
-    const line = calculateLine(item);
-    return {
-      item,
-      line,
-      unitPrice: item.quantity > 0 ? line.subtotal / item.quantity : line.subtotal,
-    };
-  });
+  const quoteLines = useMemo(
+    () =>
+      items.map((item) => {
+        const line = calculateLine(item);
+        return {
+          item,
+          line,
+          unitPrice: item.quantity > 0 ? line.subtotal / item.quantity : line.subtotal,
+        };
+      }),
+    [items],
+  );
   const selectedEstimateDocument =
     projectEstimateDocuments.find((document) => document.id === selectedEstimateDocumentId) ??
     projectEstimateDocuments[0] ??
@@ -158,25 +174,43 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
   const previewQuoteNumber = selectedEstimateDocument?.documentNumber ?? project.projectNumber ?? project.id.toUpperCase();
   const previewQuoteIssuedAt = selectedEstimateDocument?.issuedAt ?? "2026-05-07";
   const previewQuoteTotal = selectedEstimateDocument?.totalAmount ?? totals.afterTax;
-  const quotePrintInput: PrintPreviewInput = {
-    kind: "quote",
-    project,
-    recipientInfo,
-    companyInfo,
-    templateSettings: pdfTemplateSettings,
-    sealSettings,
-    title: previewQuoteTitle,
-    meta: {
-      expiresAt: previewQuoteExpiresAt,
-      remarks: previewQuoteRemarks,
-      issuedAt: previewQuoteIssuedAt,
-      documentNumber: previewQuoteNumber,
-      displayTotal: previewQuoteTotal,
-    },
-    lines: displayQuoteLines,
-    totals: displayQuoteTotals,
-    taxRate: projectTaxRate,
-  };
+  const quotePrintInput = useMemo<Extract<PrintPreviewInput, { kind: "quote" }>>(
+    () => ({
+      kind: "quote",
+      project,
+      recipientInfo,
+      companyInfo,
+      templateSettings: pdfTemplateSettings,
+      sealSettings,
+      title: previewQuoteTitle,
+      meta: {
+        expiresAt: previewQuoteExpiresAt,
+        remarks: previewQuoteRemarks,
+        issuedAt: previewQuoteIssuedAt,
+        documentNumber: previewQuoteNumber,
+        displayTotal: previewQuoteTotal,
+      },
+      lines: displayQuoteLines,
+      totals: displayQuoteTotals,
+      taxRate: projectTaxRate,
+    }),
+    [
+      project,
+      recipientInfo,
+      companyInfo,
+      pdfTemplateSettings,
+      sealSettings,
+      previewQuoteTitle,
+      previewQuoteExpiresAt,
+      previewQuoteRemarks,
+      previewQuoteIssuedAt,
+      previewQuoteNumber,
+      previewQuoteTotal,
+      displayQuoteLines,
+      displayQuoteTotals,
+      projectTaxRate,
+    ],
+  );
   const createCurrentEstimateDocument = () => {
     const version = Math.max(0, ...projectEstimateDocuments.map((document) => document.version)) + 1;
     try {
@@ -264,10 +298,34 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
       window.setTimeout(() => setToast(null), 4200);
     }
   };
+  const openQuotePdfPreview = async () => {
+    if (isOpeningQuotePdfPreview) return;
+    setIsOpeningQuotePdfPreview(true);
+    try {
+      debugQuoteSealFlow("openQuotePdfPreview input", quotePrintInput.sealSettings);
+      await openQuotePdfPreviewWindow(quotePrintInput);
+      setToast({
+        title: "PDFプレビューを開きました",
+        description: "保存PDFと同じpdf-lib経路で生成した見積書PDFを表示しました。",
+        tone: "success",
+      });
+    } catch (error) {
+      console.error("[Mitru] 見積書PDFプレビューの表示に失敗しました。", error);
+      setToast({
+        title: "PDFプレビューを表示できません",
+        description: error instanceof Error ? error.message : "見積書PDFプレビューを生成できませんでした。",
+        tone: "error",
+      });
+    } finally {
+      setIsOpeningQuotePdfPreview(false);
+      window.setTimeout(() => setToast(null), 4200);
+    }
+  };
   const exportQuotePdf = async () => {
     if (isExportingQuotePdf) return;
     setIsExportingQuotePdf(true);
     try {
+      debugQuoteSealFlow("exportQuotePdf input", quotePrintInput.sealSettings);
       const exported = await exportDocumentPdf(quotePrintInput);
       if (exported === false) return;
       setToast({
@@ -285,6 +343,34 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
     } finally {
       setIsExportingQuotePdf(false);
       window.setTimeout(() => setToast(null), 4200);
+    }
+  };
+  const saveQuotePdfPlacement = (settings: Partial<ProjectSealSettings>) => {
+    try {
+      updateProjectSealSettings(documentSealSettingsKey, settings);
+      const savedSettings = getDocumentSealSettings(
+        useProjectStore.getState().sealSettingsByProjectId,
+        project.id,
+        useProjectStore.getState().companyInfo.sealImage,
+      );
+      if (!isSavedSealPlacementApplied(settings, savedSettings)) {
+        throw new Error("保存後の印影設定を読み直せませんでした。");
+      }
+      debugQuoteSealFlow("saveQuotePdfPlacement saved settings", savedSettings);
+      setToast({
+        title: "PDF配置を保存しました",
+        description: "PDFで確認/PDF保存にロゴ・社判の配置を反映します。",
+        tone: "success",
+      });
+      window.setTimeout(() => setToast(null), 3600);
+    } catch (error) {
+      setToast({
+        title: "PDF配置を保存できません",
+        description: error instanceof Error ? error.message : "印影設定の保存に失敗しました。",
+        tone: "error",
+      });
+      window.setTimeout(() => setToast(null), 4200);
+      throw error;
     }
   };
   const requestQuotePrintHtmlExport = () => {
@@ -315,6 +401,14 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
             <Button variant="outline" className="gap-2" onClick={openQuotePrintPreview}>
               <Printer className="size-4" />
               プレビューで確認
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={() => void openQuotePdfPreview()} disabled={isOpeningQuotePdfPreview}>
+              <FileSearch className="size-4" />
+              {isOpeningQuotePdfPreview ? "PDF生成中..." : "PDFで確認"}
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={() => setPlacementPreviewOpen(true)}>
+              <Crosshair className="size-4" />
+              PDF配置確認
             </Button>
             <Button variant="outline" className="gap-2" onClick={() => void exportQuotePdf()} disabled={isExportingQuotePdf}>
               <FileDown className="size-4" />
@@ -436,6 +530,27 @@ export function QuoteTab({ project, onOpenPrintPreview, onExportPrintHtml }: Quo
           void exportQuotePrintHtml();
         }}
       />
+      <Dialog open={placementPreviewOpen} onOpenChange={setPlacementPreviewOpen}>
+        <DialogContent className={`${mainAreaDialogClass} w-[calc(100vw-48px)] max-w-[980px] gap-4 bg-white p-5 text-slate-900 dark:bg-slate-950 dark:text-white`}>
+          <DialogHeader>
+            <DialogTitle>PDF配置確認</DialogTitle>
+            <DialogDescription className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+              見積書PDFの1ページ目を表示します。
+            </DialogDescription>
+          </DialogHeader>
+          {placementPreviewOpen && (
+            <Suspense
+              fallback={
+                <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-slate-500 dark:text-slate-300">
+                  PDFを読み込み中...
+                </div>
+              }
+            >
+              <QuotePdfCanvasPreview input={quotePrintInput} onSavePlacement={saveQuotePdfPlacement} />
+            </Suspense>
+          )}
+        </DialogContent>
+      </Dialog>
       <ToastMessage toast={toast} onClose={() => setToast(null)} />
     </motion.section>
   );
@@ -507,6 +622,35 @@ function createEstimateLineSnapshot(lines: QuotePdfLine[]) {
     line: { ...line },
     unitPrice,
   }));
+}
+
+function isSavedSealPlacementApplied(input: Partial<ProjectSealSettings>, saved: ProjectSealSettings) {
+  const keys = ["logoX", "logoY", "logoScale", "x", "y", "scale", "logoOpacity", "opacity", "logoEnabled", "enabled"] as const;
+  return keys.every((key) => {
+    const expected = input[key];
+    if (expected === undefined) return true;
+    const actual = saved[key];
+    if (typeof expected === "number" && typeof actual === "number") {
+      return Math.abs(expected - actual) < 0.001;
+    }
+    return expected === actual;
+  });
+}
+
+function debugQuoteSealFlow(label: string, settings: ProjectSealSettings) {
+  if (!import.meta.env.DEV) return;
+  console.debug(`[Mitru PDF Seal Flow] ${label}`, {
+    logoEnabled: settings.logoEnabled,
+    logoX: settings.logoX,
+    logoY: settings.logoY,
+    logoScale: settings.logoScale,
+    enabled: settings.enabled,
+    x: settings.x,
+    y: settings.y,
+    scale: settings.scale,
+    opacity: settings.opacity,
+    hasSealImage: Boolean(settings.sealImage),
+  });
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

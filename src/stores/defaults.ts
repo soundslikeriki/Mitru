@@ -854,6 +854,7 @@ export const initialCompanyInfo: CompanyInfo = {
   phone: "",
   fax: "",
   contactName: "",
+  contactPosition: "",
   contactTitle: "",
   constructionLicense: "",
   invoiceRegistrationNumber: "",

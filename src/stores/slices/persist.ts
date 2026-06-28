@@ -56,7 +56,7 @@ import type {
   WorkItemMaster,
 } from "./types";
 
-export const projectStoreVersion = 56;
+export const projectStoreVersion = 57;
 const projectStoreKey = "mitru-local-store";
 const sampleDataRemovedKey = "mitru-sample-data-removed-v1";
 const samplePortfolioItemById = new Map(samplePortfolioProjectItems.map((item) => [item.id, item]));
@@ -1204,9 +1204,17 @@ function roundCurrencySnapshot(value: number, mode: TaxSettings["taxRoundingMode
 }
 
 function normalizeCompanyInfo(value: unknown): CompanyInfo {
+  const rawCompanyInfo = isRecord(value) ? value : {};
   const companyInfo = isRecord(value) ? ({ ...initialCompanyInfo, ...value } as CompanyInfo) : initialCompanyInfo;
+  const contactPosition =
+    typeof rawCompanyInfo.contactPosition === "string"
+      ? rawCompanyInfo.contactPosition
+      : typeof companyInfo.contactTitle === "string"
+        ? companyInfo.contactTitle
+        : "";
   return {
     ...companyInfo,
+    contactPosition,
     bankAccounts: normalizeBankAccounts(companyInfo.bankAccounts),
   };
 }

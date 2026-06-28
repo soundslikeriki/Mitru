@@ -1,8 +1,19 @@
 import type { PrintPreviewInput } from "@/features/documents/types";
+import type { QuotePdfGenerationOptions } from "@/features/documents/PdfGenerator";
 
 export async function exportDocumentPdf(input: PrintPreviewInput) {
   const module = await import("@/features/documents/PdfGenerator");
   return module.exportDocumentPdf(input);
+}
+
+export async function openQuotePdfPreviewWindow(input: Extract<PrintPreviewInput, { kind: "quote" }>) {
+  const module = await import("@/features/documents/PdfGenerator");
+  return module.openQuotePdfPreviewWindow(input);
+}
+
+export async function generateQuotePdfBytes(input: Extract<PrintPreviewInput, { kind: "quote" }>, options?: QuotePdfGenerationOptions) {
+  const module = await import("@/features/documents/PdfGenerator");
+  return module.generateQuotePdfBytes(input, options);
 }
 
 export async function exportDeliveryPdf(input: Extract<PrintPreviewInput, { kind: "delivery" }>) {

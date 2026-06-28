@@ -523,6 +523,7 @@ export type CompanyInfo = {
   phone: string;
   fax: string;
   contactName: string;
+  contactPosition: string;
   contactTitle: string;
   constructionLicense: string;
   invoiceRegistrationNumber: string;

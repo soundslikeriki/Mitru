@@ -1,4 +1,4 @@
-import { PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import notoSansJpRegularFontUrl from "@/assets/fonts/NotoSansJP-Regular.ttf?url";
 import {
@@ -19,6 +19,7 @@ import { formatConsumptionTaxLabel, resolveProjectTaxRate } from "@/lib/tax";
 import type { DocumentRecipientInfo, InvoiceBillingSummary, InvoicePdfLine, PrintPreviewInput, QuotePdfLine, QuotePrintMeta } from "@/features/documents/types";
 import {
   getProjectCostSettings,
+  getDocumentSealSettings,
   getProjectInvoiceSettings,
   getProjectQuoteSettings,
   getProjectSealSettings,
@@ -33,7 +34,7 @@ import {
   type TaxSettings,
 } from "@/stores/project-store";
 import { revealFileInFolder, saveBinaryFile, saveTextFileWithPath } from "@/lib/file-export";
-import { loadImageAsset } from "@/lib/image-storage";
+import { loadImageAsset, notifyImageStorageWarning } from "@/lib/image-storage";
 
 type PdfTemplateSettingsState = PdfTemplateSettings;
 type CompanyInfoState = CompanyInfo;
@@ -41,12 +42,221 @@ type PrintDocumentRenderOptions = {
   includeLogoImage?: boolean;
   includeSealImage?: boolean;
 };
+export type QuotePdfGenerationOptions = {
+  suppressLogoAndSeal?: boolean;
+};
 
-let pdfJapaneseFontBytesPromise: Promise<ArrayBuffer> | null = null;
+type PdfFontWeight = "regular" | "medium" | "bold";
+type PdfFontSet = Record<PdfFontWeight, PDFFont>;
+type PdfEmbedFontOptions = Parameters<PDFDocument["embedFont"]>[1];
+type PdfFontAssetModule = string;
+type PdfPage = ReturnType<PDFDocument["addPage"]>;
+type PdfColor = ReturnType<typeof rgb>;
+type PdfTextAlign = "left" | "center" | "right";
+type PdfBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+type PdfTextOptions = {
+  page: PdfPage;
+  text: string;
+  x: number;
+  y: number;
+  fonts: PdfFontSet;
+  weight?: PdfFontWeight;
+  fontSize?: number;
+  color?: PdfColor;
+  align?: PdfTextAlign;
+  maxWidth?: number;
+  maxLines?: number;
+  lineHeight?: number;
+};
+type PdfRuleOptions = {
+  page: PdfPage;
+  x: number;
+  y: number;
+  width: number;
+  color?: PdfColor;
+  thickness?: number;
+};
+type PdfCardOptions = PdfBox & {
+  page: PdfPage;
+  fillColor?: PdfColor;
+  borderColor?: PdfColor;
+  borderWidth?: number;
+  radius?: number;
+  padding?: number;
+};
+type PdfLabelValueOptions = {
+  page: PdfPage;
+  label: string;
+  value: string;
+  x: number;
+  y: number;
+  width: number;
+  fonts: PdfFontSet;
+  labelWidth?: number;
+  gap?: number;
+  fontSize?: number;
+  labelColor?: PdfColor;
+  valueColor?: PdfColor;
+  lineHeight?: number;
+  maxValueLines?: number;
+};
+type PdfSectionTitleOptions = {
+  page: PdfPage;
+  title: string;
+  x: number;
+  y: number;
+  width: number;
+  fonts: PdfFontSet;
+  color?: PdfColor;
+  ruleColor?: PdfColor;
+  fontSize?: number;
+};
+type QuotePdfInput = Extract<Parameters<typeof exportDocumentPdf>[0], { kind: "quote" }>;
+type FormalQuoteMainLine = {
+  text: string;
+  xOffset: number;
+  maxWidth: number;
+  category?: string;
+};
+type FormalQuoteRowMeasurement = {
+  mainLines: FormalQuoteMainLine[];
+  specLines: string[];
+  contentHeight: number;
+  rowHeight: number;
+};
+type FormalQuoteRowGeometry = {
+  rowTopY: number;
+  rowBottomY: number;
+  mainTextY: number;
+  numericTextY: number;
+};
+
+// Future tokens for Mitru's formal pdf-lib document design. PDF-01 only scaffolds them;
+// existing drawing functions intentionally do not consume these tokens yet.
+export const pdfDesignTokens = {
+  page: {
+    size: [595.28, 841.89],
+    margin: 42.5,
+    contentWidth: 510.3,
+  },
+  colors: {
+    ink: rgb(0.059, 0.09, 0.165),
+    text: rgb(0.2, 0.255, 0.333),
+    muted: rgb(0.392, 0.455, 0.545),
+    rule: rgb(0.886, 0.91, 0.941),
+    strongRule: rgb(0.796, 0.835, 0.882),
+    card: rgb(0.973, 0.98, 0.99),
+    amount: rgb(0.937, 0.965, 1),
+    primaryBlue: rgb(0.118, 0.227, 0.541),
+    amountNavy: rgb(0.09, 0.145, 0.329),
+    successTeal: rgb(0.059, 0.463, 0.431),
+  },
+  typography: {
+    fontFamily: "Noto Sans JP",
+    weights: {
+      regular: 400,
+      medium: 500,
+      bold: 700,
+    },
+    sizes: {
+      title: 24,
+      recipient: 16,
+      projectTitle: 13,
+      body: 9,
+      table: 8,
+      small: 7,
+      amount: 22,
+    },
+    lineHeights: {
+      body: 1.35,
+      notes: 1.5,
+      table: 1.25,
+      meta: 1.45,
+    },
+  },
+  spacing: {
+    xs: 4,
+    sm: 6,
+    md: 8,
+    lg: 12,
+    xl: 16,
+    xxl: 24,
+    xxxl: 32,
+  },
+  border: {
+    hairline: 0.35,
+    normal: 0.5,
+    emphasis: 0.8,
+  },
+  radius: {
+    card: 6,
+    largeCard: 8,
+  },
+  table: {
+    rowHeight: 24,
+    denseRowHeight: 21,
+    expandedRowHeight: 34,
+  },
+  media: {
+    sealOpacity: 0.82,
+    logoMaxWidth: 118,
+    logoMaxHeight: 44,
+  },
+} as const;
+
+const optionalPdfFontAssetUrls = import.meta.glob<PdfFontAssetModule>(
+  "../../assets/fonts/NotoSansJP-{Medium,Bold}.ttf",
+  {
+    eager: true,
+    import: "default",
+    query: "?url",
+  },
+);
+const pdfFontUrls: Record<PdfFontWeight, string | null> = {
+  regular: notoSansJpRegularFontUrl,
+  medium: optionalPdfFontAssetUrls["../../assets/fonts/NotoSansJP-Medium.ttf"] ?? null,
+  bold: optionalPdfFontAssetUrls["../../assets/fonts/NotoSansJP-Bold.ttf"] ?? null,
+};
+const pdfFontBytesPromises: Partial<Record<PdfFontWeight, Promise<ArrayBuffer>>> = {};
+const warnedPdfFontFallbacks = new Set<PdfFontWeight>();
+
+function warnPdfFontFallback(weight: PdfFontWeight, reason: string) {
+  if (weight === "regular" || warnedPdfFontFallbacks.has(weight)) return;
+  warnedPdfFontFallbacks.add(weight);
+  console.warn(`[Mitru] PDF用日本語フォント(${weight})をRegularへフォールバックします。${reason}`);
+}
+
+function warnPdfImageSkip(description: string, error: unknown) {
+  notifyImageStorageWarning(description);
+  console.warn(`[Mitru] ${description}`, error);
+}
+
+function debugFormalQuoteSealFlow(label: string, payload: Record<string, unknown>) {
+  if (!import.meta.env.DEV) return;
+  console.debug(`[Mitru PDF Seal Flow] ${label}`, payload);
+}
 
 function getActiveSealImage(companyInfo: CompanyInfoState, settings: ProjectSealSettings) {
-  if (!settings.enabled) return "";
+  if (settings.enabled === false) return "";
   return settings.sealImage || companyInfo.sealImage;
+}
+
+function fitPdfImageWithinBox(image: { width: number; height: number }, maxWidth: number, maxHeight: number) {
+  const safeImageWidth = Math.max(1, image.width);
+  const safeImageHeight = Math.max(1, image.height);
+  const scale = Math.min(maxWidth / safeImageWidth, maxHeight / safeImageHeight);
+  if (!Number.isFinite(scale) || scale <= 0) {
+    return { width: maxWidth, height: maxHeight };
+  }
+  return {
+    width: safeImageWidth * scale,
+    height: safeImageHeight * scale,
+  };
 }
 
 function paginateRowsByWeight<T>(rows: T[], getWeight: (row: T) => number, maxPageWeight = 9) {
@@ -144,17 +354,374 @@ const quotePdfStrongOffsets = {
   finalTotalAmount: 0.42,
 } as const;
 
-async function loadPdfFontBytes() {
-  pdfJapaneseFontBytesPromise ??= (async () => {
-    const response = await fetch(notoSansJpRegularFontUrl);
-    if (!response.ok) {
-      throw new Error(`PDF用日本語フォントの読み込みに失敗しました (${response.status})`);
+const formalQuotePdfLayout = {
+  pageWidth: 595.28,
+  pageHeight: 841.89,
+  margin: pdfDesignTokens.page.margin,
+  right: pdfDesignTokens.page.margin + pdfDesignTokens.page.contentWidth,
+  contentWidth: pdfDesignTokens.page.contentWidth,
+  eyebrowY: 794,
+  titleY: 764,
+  metaY: 792,
+  logoTopY: 792,
+  headerRuleY: 724,
+  recipientTop: 700,
+  companyTop: 662,
+  companyBlockLift: 30,
+  companyBlockRightShift: 40,
+  projectCardY: 538,
+  amountCardY: 480,
+  tableHeaderY: 434,
+  tableFirstRowY: 405,
+  tableBottomY: 168,
+  bottomY: 76,
+  totalsY: 72,
+  footerY: 34,
+  columns: {
+    itemX: 52,
+    itemWidth: 244,
+    quantityRight: 374,
+    unitPriceRight: 455,
+    amountRight: 542,
+  },
+  bottom: {
+    notesX: 42.5,
+    notesWidth: 268,
+    totalsX: 330,
+    totalsWidth: 222,
+  },
+} as const;
+
+const formalQuoteTableMetrics = {
+  mainFontSize: 8.3,
+  specFontSize: 7.3,
+  mainLineHeight: 10.4,
+  specLineHeight: 9.4,
+  topPadding: 7.5,
+  bottomPadding: 8.5,
+  mainBaselineOffset: 7,
+  numericBaselineOffset: 2.7,
+  mainSpecGap: 4.8,
+  specXOffset: 6,
+  minRowHeight: 30,
+  maxMainLines: 3,
+  maxSpecLines: 2,
+} as const;
+
+const formalQuoteTypographyTone = {
+  metaLabel: rgb(0.2039, 0.2509, 0.3294),
+  metaValue: rgb(0.1176, 0.1608, 0.2314),
+  primaryName: rgb(0.1176, 0.1608, 0.2314),
+  supportText: rgb(0.2039, 0.2509, 0.3294),
+} as const;
+
+async function loadPdfFontBytes(weight: PdfFontWeight = "regular"): Promise<ArrayBuffer> {
+  const fontUrl = pdfFontUrls[weight];
+  if (!fontUrl) {
+    warnPdfFontFallback(weight, "フォントファイルが見つかりません。");
+    return loadPdfFontBytes("regular");
+  }
+
+  pdfFontBytesPromises[weight] ??= (async () => {
+    try {
+      const response = await fetch(fontUrl);
+      if (!response.ok) {
+        throw new Error(`PDF用日本語フォント(${weight})の読み込みに失敗しました (${response.status})`);
+      }
+      return response.arrayBuffer();
+    } catch (error) {
+      if (weight === "regular") throw error;
+      warnPdfFontFallback(weight, error instanceof Error ? error.message : "読み込みに失敗しました。");
+      return loadPdfFontBytes("regular");
     }
-    return response.arrayBuffer();
   })();
 
-  return pdfJapaneseFontBytesPromise;
+  return pdfFontBytesPromises[weight];
 }
+
+async function embedPdfFontSet(pdfDoc: PDFDocument, options?: PdfEmbedFontOptions): Promise<PdfFontSet> {
+  const regular = await pdfDoc.embedFont(await loadPdfFontBytes("regular"), options);
+  const embedOptionalFont = async (weight: Exclude<PdfFontWeight, "regular">) => {
+    if (!pdfFontUrls[weight]) {
+      warnPdfFontFallback(weight, "フォントファイルが見つかりません。");
+      return regular;
+    }
+    try {
+      return await pdfDoc.embedFont(await loadPdfFontBytes(weight), options);
+    } catch (error) {
+      warnPdfFontFallback(weight, error instanceof Error ? error.message : "埋め込みに失敗しました。");
+      return regular;
+    }
+  };
+  const medium = await embedOptionalFont("medium");
+  const bold = await embedOptionalFont("bold");
+  return { regular, medium, bold };
+}
+
+function getPdfFont(fonts: PdfFontSet, weight: PdfFontWeight = "regular") {
+  return fonts[weight] ?? fonts.regular;
+}
+
+function getAlignedPdfTextX(text: string, x: number, size: number, font: PDFFont, align: PdfTextAlign) {
+  if (align === "left") return x;
+  const width = font.widthOfTextAtSize(text, size);
+  return align === "center" ? x - width / 2 : x - width;
+}
+
+function drawFormalPdfText({
+  page,
+  text,
+  x,
+  y,
+  fonts,
+  weight = "regular",
+  fontSize = pdfDesignTokens.typography.sizes.body,
+  color = pdfDesignTokens.colors.text,
+  align = "left",
+  maxWidth,
+  maxLines = 1,
+  lineHeight = pdfDesignTokens.typography.lineHeights.body,
+}: PdfTextOptions) {
+  const font = getPdfFont(fonts, weight);
+  const lines = maxWidth
+    ? wrapPdfText(text || "-", maxWidth, fontSize, font).slice(0, maxLines)
+    : [text || "-"];
+  const lineGap = fontSize * lineHeight;
+  lines.forEach((line, index) => {
+    page.drawText(line, {
+      x: getAlignedPdfTextX(line, x, fontSize, font, align),
+      y: y - index * lineGap,
+      size: fontSize,
+      font,
+      color,
+    });
+  });
+}
+
+function drawFormalQuotePlainText(
+  page: PdfPage,
+  text: string,
+  {
+    x,
+    y,
+    font,
+    size,
+    color,
+    align = "left",
+  }: {
+    x: number;
+    y: number;
+    font: PDFFont;
+    size: number;
+    color: PdfColor;
+    align?: PdfTextAlign;
+  },
+) {
+  const finalText = text || "-";
+  page.drawText(finalText, {
+    x: getAlignedPdfTextX(finalText, x, size, font, align),
+    y,
+    size,
+    font,
+    color,
+  });
+}
+
+function drawFormalPdfTitle(options: Omit<PdfTextOptions, "weight" | "fontSize" | "color"> & Partial<Pick<PdfTextOptions, "weight" | "fontSize" | "color">>) {
+  drawFormalPdfText({
+    ...options,
+    weight: options.weight ?? "bold",
+    fontSize: options.fontSize ?? pdfDesignTokens.typography.sizes.title,
+    color: options.color ?? pdfDesignTokens.colors.ink,
+  });
+}
+
+function drawFormalPdfLabel(options: Omit<PdfTextOptions, "weight" | "fontSize" | "color"> & Partial<Pick<PdfTextOptions, "weight" | "fontSize" | "color">>) {
+  drawFormalPdfText({
+    ...options,
+    weight: options.weight ?? "medium",
+    fontSize: options.fontSize ?? pdfDesignTokens.typography.sizes.small,
+    color: options.color ?? pdfDesignTokens.colors.muted,
+  });
+}
+
+function drawFormalPdfValue(options: Omit<PdfTextOptions, "weight" | "fontSize" | "color"> & Partial<Pick<PdfTextOptions, "weight" | "fontSize" | "color">>) {
+  drawFormalPdfText({
+    ...options,
+    weight: options.weight ?? "regular",
+    fontSize: options.fontSize ?? pdfDesignTokens.typography.sizes.body,
+    color: options.color ?? pdfDesignTokens.colors.text,
+  });
+}
+
+function drawFormalPdfRule({
+  page,
+  x,
+  y,
+  width,
+  color = pdfDesignTokens.colors.rule,
+  thickness = pdfDesignTokens.border.hairline,
+}: PdfRuleOptions) {
+  page.drawLine({
+    start: { x, y },
+    end: { x: x + width, y },
+    thickness,
+    color,
+  });
+}
+
+function getPdfCardContentBox({ x, y, width, height, padding = 0 }: PdfCardOptions): PdfBox {
+  return {
+    x: x + padding,
+    y: y + padding,
+    width: Math.max(0, width - padding * 2),
+    height: Math.max(0, height - padding * 2),
+  };
+}
+
+function drawFormalPdfCard({
+  page,
+  x,
+  y,
+  width,
+  height,
+  fillColor = pdfDesignTokens.colors.card,
+  borderColor = pdfDesignTokens.colors.rule,
+  borderWidth = pdfDesignTokens.border.hairline,
+  padding = 0,
+}: PdfCardOptions) {
+  page.drawRectangle({
+    x,
+    y,
+    width,
+    height,
+    color: fillColor,
+    borderColor,
+    borderWidth,
+  });
+  return getPdfCardContentBox({ page, x, y, width, height, padding });
+}
+
+function drawFormalPdfRoundedCard({
+  page,
+  x,
+  y,
+  width,
+  height,
+  fillColor = pdfDesignTokens.colors.card,
+  borderColor = pdfDesignTokens.colors.rule,
+  borderWidth = pdfDesignTokens.border.hairline,
+  radius = pdfDesignTokens.radius.card,
+  padding = 0,
+}: PdfCardOptions) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  const path = [
+    `M ${safeRadius} 0`,
+    `L ${width - safeRadius} 0`,
+    `Q ${width} 0 ${width} ${safeRadius}`,
+    `L ${width} ${height - safeRadius}`,
+    `Q ${width} ${height} ${width - safeRadius} ${height}`,
+    `L ${safeRadius} ${height}`,
+    `Q 0 ${height} 0 ${height - safeRadius}`,
+    `L 0 ${safeRadius}`,
+    `Q 0 0 ${safeRadius} 0`,
+    "Z",
+  ].join(" ");
+
+  page.drawSvgPath(path, {
+    x,
+    y: y + height,
+    color: fillColor,
+    borderColor,
+    borderWidth,
+  });
+  return getPdfCardContentBox({ page, x, y, width, height, padding });
+}
+
+function drawFormalPdfLabelValue({
+  page,
+  label,
+  value,
+  x,
+  y,
+  width,
+  fonts,
+  labelWidth = Math.min(84, width * 0.34),
+  gap = pdfDesignTokens.spacing.sm,
+  fontSize = pdfDesignTokens.typography.sizes.body,
+  labelColor = pdfDesignTokens.colors.muted,
+  valueColor = pdfDesignTokens.colors.text,
+  lineHeight = pdfDesignTokens.typography.lineHeights.meta,
+  maxValueLines = 2,
+}: PdfLabelValueOptions) {
+  drawFormalPdfLabel({
+    page,
+    text: label,
+    x,
+    y,
+    fonts,
+    fontSize,
+    color: labelColor,
+    maxWidth: labelWidth,
+  });
+  drawFormalPdfValue({
+    page,
+    text: value || "-",
+    x: x + labelWidth + gap,
+    y,
+    fonts,
+    fontSize,
+    color: valueColor,
+    maxWidth: Math.max(0, width - labelWidth - gap),
+    maxLines: maxValueLines,
+    lineHeight,
+  });
+}
+
+function drawFormalPdfSectionTitle({
+  page,
+  title,
+  x,
+  y,
+  width,
+  fonts,
+  color = pdfDesignTokens.colors.ink,
+  ruleColor = pdfDesignTokens.colors.rule,
+  fontSize = pdfDesignTokens.typography.sizes.body,
+}: PdfSectionTitleOptions) {
+  drawFormalPdfText({
+    page,
+    text: title,
+    x,
+    y,
+    fonts,
+    weight: "medium",
+    fontSize,
+    color,
+  });
+  drawFormalPdfRule({
+    page,
+    x,
+    y: y - pdfDesignTokens.spacing.sm,
+    width,
+    color: ruleColor,
+    thickness: pdfDesignTokens.border.hairline,
+  });
+}
+
+// PDF-02 scaffolds these helpers for the formal pdf-lib templates. Existing document
+// rendering intentionally does not call them until PDF-03+ applies the new design.
+export const pdfFormalDrawingHelpers = {
+  drawPdfText: drawFormalPdfText,
+  drawPdfTitle: drawFormalPdfTitle,
+  drawPdfLabel: drawFormalPdfLabel,
+  drawPdfValue: drawFormalPdfValue,
+  drawPdfLabelValue: drawFormalPdfLabelValue,
+  drawPdfRule: drawFormalPdfRule,
+  drawPdfCard: drawFormalPdfCard,
+  drawPdfRoundedCard: drawFormalPdfRoundedCard,
+  drawPdfSectionTitle: drawFormalPdfSectionTitle,
+} as const;
 
 function buildPrintDocumentBody(input: PrintPreviewInput, options: PrintDocumentRenderOptions = {}) {
   if (input.kind === "quote") return buildQuotePdfHtml(input, options);
@@ -201,10 +768,9 @@ async function resolvePrintPreviewInputImages<TInput extends PrintPreviewInput>(
   return { ...input, companyInfo, templateSettings, sealSettings } as TInput;
 }
 
-export async function exportDocumentPdf(input: PrintPreviewInput) {
+export async function generateDocumentPdfBytes(input: PrintPreviewInput, options: QuotePdfGenerationOptions = {}) {
   input = await resolvePrintPreviewInputImages(input);
   const documentTitle = getDocumentTitle(input.kind);
-  const fileName = buildPdfFileName(input.project.name, documentTitle);
   const pdfDoc = await PDFDocument.create();
   pdfDoc.registerFontkit(fontkit);
   pdfDoc.setTitle(`${input.project.name}_${documentTitle}`);
@@ -212,21 +778,38 @@ export async function exportDocumentPdf(input: PrintPreviewInput) {
   pdfDoc.setSubject(`${input.project.constructionName} ${documentTitle}`);
   pdfDoc.setCreationDate(new Date());
 
-  const fontBytes = await loadPdfFontBytes();
-  const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: false });
   if (input.kind === "quote") {
-    const pages = paginateQuoteLines(input.lines);
+    debugFormalQuoteSealFlow("generateDocumentPdfBytes quote input", {
+      suppressLogoAndSeal: options.suppressLogoAndSeal === true,
+      logoEnabled: input.sealSettings.logoEnabled,
+      logoX: input.sealSettings.logoX,
+      logoY: input.sealSettings.logoY,
+      logoScale: input.sealSettings.logoScale,
+      enabled: input.sealSettings.enabled,
+      x: input.sealSettings.x,
+      y: input.sealSettings.y,
+      scale: input.sealSettings.scale,
+      opacity: input.sealSettings.opacity,
+      hasSealImage: Boolean(input.sealSettings.sealImage || input.companyInfo.sealImage),
+      hasLogoImage: Boolean(input.companyInfo.logoImage),
+    });
+    const fonts = await embedPdfFontSet(pdfDoc, { subset: false });
+    const pages = paginateFormalQuoteLines(input.lines, fonts);
     for (const [pageIndex, lines] of pages.entries()) {
       const page = pdfDoc.addPage([595.28, 841.89]);
-      await drawQuotePdfPage(pdfDoc, page, embeddedFont, { ...input, lines }, pageIndex, pages.length);
+      await drawFormalQuotePdfPage(pdfDoc, page, fonts, { ...input, lines }, pageIndex, pages.length, options);
     }
   } else if (input.kind === "invoice") {
+    const fontBytes = await loadPdfFontBytes();
+    const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: false });
     const pages = paginateInvoiceLines(input.invoiceLines);
     for (const [pageIndex, invoiceLines] of pages.entries()) {
       const page = pdfDoc.addPage([595.28, 841.89]);
       await drawInvoicePdfPage(pdfDoc, page, embeddedFont, { ...input, invoiceLines }, pageIndex, pages.length);
     }
   } else {
+    const fontBytes = await loadPdfFontBytes();
+    const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: false });
     const pages = paginateQuoteLines(input.lines);
     for (const [pageIndex, lines] of pages.entries()) {
       const page = pdfDoc.addPage([595.28, 841.89]);
@@ -234,7 +817,17 @@ export async function exportDocumentPdf(input: PrintPreviewInput) {
     }
   }
 
-  const pdfBytes = await pdfDoc.save();
+  return pdfDoc.save();
+}
+
+export function generateQuotePdfBytes(input: QuotePdfInput, options?: QuotePdfGenerationOptions) {
+  return generateDocumentPdfBytes(input, options);
+}
+
+export async function exportDocumentPdf(input: PrintPreviewInput) {
+  const documentTitle = getDocumentTitle(input.kind);
+  const fileName = buildPdfFileName(input.project.name, documentTitle);
+  const pdfBytes = await generateDocumentPdfBytes(input);
   return savePdfBytes(fileName, pdfBytes);
 }
 
@@ -269,8 +862,8 @@ export async function exportAllDocumentsPdf(input: {
   pdfDoc.setAuthor(input.companyInfo.legalName || "Mitru");
   pdfDoc.setCreationDate(new Date());
 
-  const fontBytes = await loadPdfFontBytes();
-  const embeddedFont = await pdfDoc.embedFont(fontBytes, { subset: true });
+  const quoteFonts = input.estimateDocuments.length > 0 ? await embedPdfFontSet(pdfDoc, { subset: true }) : null;
+  const embeddedFont = quoteFonts?.regular ?? await pdfDoc.embedFont(await loadPdfFontBytes(), { subset: true });
   const projectById = new Map(input.projects.map((project) => [project.id, project]));
 
   for (const document of [...input.estimateDocuments].sort((a, b) => a.projectId.localeCompare(b.projectId) || a.version - b.version)) {
@@ -279,7 +872,7 @@ export async function exportAllDocumentsPdf(input: {
     const items = input.projectItems.filter((item) => item.projectId === project.id);
     const costSettings = getProjectCostSettings(input.costSettingsByProjectId, project.id);
     const projectTaxRate = resolveProjectTaxRate(project.taxRateType, input.taxSettings.standardTaxRate);
-    const sealSettings = getProjectSealSettings(input.sealSettingsByProjectId, project.id, input.companyInfo.sealImage);
+    const sealSettings = getDocumentSealSettings(input.sealSettingsByProjectId, project.id, input.companyInfo.sealImage);
     const totals = calculateEstimateTotals(
       items,
       costSettings.commonTemporaryRate,
@@ -316,10 +909,10 @@ export async function exportAllDocumentsPdf(input: {
       totals: documentTotals,
       taxRate: projectTaxRate,
     };
-    const pages = paginateQuoteLines(lines);
+    const pages = paginateFormalQuoteLines(lines, quoteFonts ?? { regular: embeddedFont, medium: embeddedFont, bold: embeddedFont });
     for (const [pageIndex, pageLines] of pages.entries()) {
       const page = pdfDoc.addPage([595.28, 841.89]);
-      await drawQuotePdfPage(pdfDoc, page, embeddedFont, { ...quoteInput, lines: pageLines }, pageIndex, pages.length);
+      await drawFormalQuotePdfPage(pdfDoc, page, quoteFonts ?? { regular: embeddedFont, medium: embeddedFont, bold: embeddedFont }, { ...quoteInput, lines: pageLines }, pageIndex, pages.length);
     }
   }
 
@@ -396,6 +989,1100 @@ export async function exportAllDocumentsPdf(input: {
   return documentCount;
 }
 
+function paginateFormalQuoteLines(lines: QuotePdfLine[], fonts: PdfFontSet) {
+  if (lines.length === 0) return [[]] as QuotePdfLine[][];
+  const pages: QuotePdfLine[][] = [];
+  let pageLines: QuotePdfLine[] = [];
+  let nextBaselineY = formalQuotePdfLayout.tableFirstRowY;
+
+  lines.forEach((line) => {
+    const measurement = measureFormalQuoteRow(line.item, fonts);
+    const geometry = getFormalQuoteRowGeometry(nextBaselineY, measurement);
+    if (pageLines.length > 0 && geometry.rowBottomY < formalQuotePdfLayout.tableBottomY) {
+      pages.push(pageLines);
+      pageLines = [];
+      nextBaselineY = formalQuotePdfLayout.tableFirstRowY;
+    }
+    pageLines.push(line);
+    nextBaselineY -= measurement.rowHeight;
+  });
+
+  if (pageLines.length > 0) pages.push(pageLines);
+  return pages;
+}
+
+function measureFormalQuoteRow(item: ProjectItem, fonts: PdfFontSet): FormalQuoteRowMeasurement {
+  const specFont = getPdfFont(fonts, "regular");
+  const metrics = formalQuoteTableMetrics;
+  const mainLines = limitFormalQuoteMainLines(
+    measureFormalQuoteMainLines(item, fonts),
+    metrics.maxMainLines,
+  );
+  const specification = formatDocumentSpecificationDetail(item);
+  const specLines = specification
+    ? limitPdfLines(
+        wrapPdfText(
+          `品番・仕様: ${specification}`,
+          formalQuotePdfLayout.columns.itemWidth - metrics.specXOffset,
+          metrics.specFontSize,
+          specFont,
+        ),
+        metrics.maxSpecLines,
+      )
+    : [];
+  const contentHeight =
+    mainLines.length * metrics.mainLineHeight +
+    (specLines.length > 0 ? metrics.mainSpecGap + specLines.length * metrics.specLineHeight : 0);
+  const rowHeight = Math.max(metrics.minRowHeight, metrics.topPadding + contentHeight + metrics.bottomPadding);
+  return { mainLines, specLines, contentHeight, rowHeight };
+}
+
+function measureFormalQuoteMainLines(item: ProjectItem, fonts: PdfFontSet): FormalQuoteMainLine[] {
+  const mainFont = getPdfFont(fonts, "medium");
+  const metrics = formalQuoteTableMetrics;
+  const itemWidth = formalQuotePdfLayout.columns.itemWidth;
+  const label = formatDocumentWorkItemLabel(item) || "工事項目";
+  const categoryMatch = label.match(/^(【[^】]+】)\s*(.*)$/);
+
+  if (!categoryMatch) {
+    return wrapPdfText(label, itemWidth, metrics.mainFontSize, mainFont).map((text) => ({
+      text,
+      xOffset: 0,
+      maxWidth: itemWidth,
+    }));
+  }
+
+  const [, category, rest] = categoryMatch;
+  const categoryGap = 3;
+  const categoryWidth = mainFont.widthOfTextAtSize(category, metrics.mainFontSize);
+  const textXOffset = Math.min(categoryWidth + categoryGap, itemWidth - 80);
+  const textWidth = Math.max(80, itemWidth - textXOffset);
+  const restLines = rest.trim()
+    ? wrapPdfText(rest.trim(), textWidth, metrics.mainFontSize, mainFont)
+    : [];
+
+  if (restLines.length === 0) {
+    return [{ text: category, xOffset: 0, maxWidth: itemWidth }];
+  }
+
+  return [
+    { text: restLines[0], xOffset: textXOffset, maxWidth: textWidth, category },
+    ...restLines.slice(1).map((text) => ({ text, xOffset: textXOffset, maxWidth: textWidth })),
+  ];
+}
+
+function getFormalQuoteRowGeometry(rowAnchorY: number, measurement: FormalQuoteRowMeasurement): FormalQuoteRowGeometry {
+  const metrics = formalQuoteTableMetrics;
+  const rowTopY = rowAnchorY + metrics.topPadding;
+  const rowBottomY = rowTopY - measurement.rowHeight;
+  const contentTopY = rowTopY - (measurement.rowHeight - measurement.contentHeight) / 2;
+  return {
+    rowTopY,
+    rowBottomY,
+    mainTextY: contentTopY - metrics.mainBaselineOffset,
+    numericTextY: rowTopY - measurement.rowHeight / 2 - metrics.numericBaselineOffset,
+  };
+}
+
+function limitFormalQuoteMainLines(lines: FormalQuoteMainLine[], maxLines: number) {
+  const safeLines = lines.length > 0
+    ? lines
+    : [{ text: "-", xOffset: 0, maxWidth: formalQuotePdfLayout.columns.itemWidth }];
+  if (safeLines.length <= maxLines) return safeLines;
+  const visibleLines = safeLines.slice(0, maxLines).map((line) => ({ ...line }));
+  const lastLine = visibleLines[visibleLines.length - 1];
+  lastLine.text = `${lastLine.text.replace(/…+$/, "")}…`;
+  return visibleLines;
+}
+
+function limitPdfLines(lines: string[], maxLines: number) {
+  const safeLines = lines.length > 0 ? lines : ["-"];
+  if (safeLines.length <= maxLines) return safeLines;
+  const visibleLines = safeLines.slice(0, maxLines);
+  visibleLines[visibleLines.length - 1] = `${visibleLines[visibleLines.length - 1].replace(/…+$/, "")}…`;
+  return visibleLines;
+}
+
+async function drawFormalQuotePdfPage(
+  pdfDoc: PDFDocument,
+  page: PdfPage,
+  fonts: PdfFontSet,
+  input: QuotePdfInput,
+  pageIndex: number,
+  pageCount: number,
+  options: QuotePdfGenerationOptions = {},
+) {
+  await drawPdfBase(pdfDoc, page, input.templateSettings.quoteBackgroundImage);
+  const codeFont = await pdfDoc.embedStandardFont(StandardFonts.Helvetica);
+  const { project, companyInfo, templateSettings, sealSettings, title, meta, lines, totals } = input;
+  const h = pdfFormalDrawingHelpers;
+  const layout = formalQuotePdfLayout;
+  const isLastPage = pageIndex === pageCount - 1;
+  const displayTotal = meta.displayTotal ?? totals.afterTax;
+
+  h.drawPdfRule({
+    page,
+    x: layout.margin,
+    y: layout.headerRuleY,
+    width: layout.contentWidth,
+    color: pdfDesignTokens.colors.rule,
+    thickness: pdfDesignTokens.border.normal,
+  });
+  h.drawPdfTitle({
+    page,
+    text: title || "御見積書",
+    x: layout.pageWidth / 2,
+    y: layout.titleY,
+    fonts,
+    fontSize: 25,
+    align: "center",
+    maxWidth: 250,
+  });
+  drawFormalQuoteMeta(page, fonts, codeFont, input, layout.margin, layout.metaY);
+  if (!options.suppressLogoAndSeal) {
+    await drawFormalQuoteLogo(pdfDoc, page, companyInfo, sealSettings, layout.right, layout.logoTopY);
+  }
+
+  drawFormalQuoteRecipientBlock(page, fonts, codeFont, input, layout.margin, layout.recipientTop);
+  drawFormalQuoteCompanyBlock(page, fonts, codeFont, companyInfo, layout.right, layout.companyTop + layout.companyBlockLift);
+  if (!options.suppressLogoAndSeal) {
+    await drawFormalQuoteSeal(pdfDoc, page, companyInfo, templateSettings, sealSettings);
+  }
+
+  const projectCard = h.drawPdfRoundedCard({
+    page,
+    x: layout.margin,
+    y: layout.projectCardY,
+    width: layout.contentWidth,
+    height: 74,
+    radius: pdfDesignTokens.radius.largeCard,
+    padding: 11,
+    fillColor: pdfDesignTokens.colors.card,
+    borderColor: pdfDesignTokens.colors.rule,
+    borderWidth: pdfDesignTokens.border.normal,
+  });
+  h.drawPdfLabel({
+    page,
+    text: "件名",
+    x: projectCard.x,
+    y: projectCard.y + projectCard.height - 12,
+    fonts,
+    fontSize: 7.5,
+    color: formalQuoteTypographyTone.metaLabel,
+  });
+  const projectTitleFontSize = 12.5;
+  const projectTitleLineHeight = 1.16;
+  const projectTitleY = projectCard.y + projectCard.height - 29;
+  const projectTitleLineCount = wrapPdfText(
+    project.constructionName,
+    356,
+    projectTitleFontSize,
+    getPdfFont(fonts, "bold"),
+  ).slice(0, 2).length || 1;
+  const projectTitleLastLineY = projectTitleY - (projectTitleLineCount - 1) * projectTitleFontSize * projectTitleLineHeight;
+  const projectLocationY = projectTitleLastLineY - 15;
+  h.drawPdfText({
+    page,
+    text: project.constructionName,
+    x: projectCard.x,
+    y: projectTitleY,
+    fonts,
+    weight: "bold",
+    fontSize: projectTitleFontSize,
+    color: formalQuoteTypographyTone.primaryName,
+    maxWidth: 356,
+    maxLines: 2,
+    lineHeight: projectTitleLineHeight,
+  });
+  h.drawPdfText({
+    page,
+    text: project.location || "-",
+    x: projectCard.x,
+    y: projectLocationY,
+    fonts,
+    weight: "medium",
+    fontSize: 7.5,
+    color: formalQuoteTypographyTone.supportText,
+    maxWidth: projectCard.width,
+    maxLines: 2,
+    lineHeight: 1.12,
+  });
+
+  const amountCard = h.drawPdfRoundedCard({
+    page,
+    x: layout.margin,
+    y: layout.amountCardY,
+    width: layout.contentWidth,
+    height: 42,
+    radius: pdfDesignTokens.radius.largeCard,
+    padding: 12,
+    fillColor: pdfDesignTokens.colors.amount,
+    borderColor: rgb(0.749, 0.859, 0.996),
+    borderWidth: pdfDesignTokens.border.normal,
+  });
+  const amountLabelFontSize = 12.2;
+  const amountValueFontSize = 22;
+  const amountCardCenterY = amountCard.y + amountCard.height / 2;
+  const amountLabelBaselineY = amountCardCenterY - amountLabelFontSize * 0.35;
+  const amountValueBaselineY = amountCardCenterY - amountValueFontSize * 0.35;
+  h.drawPdfLabel({
+    page,
+    text: "御見積合計額（税込）",
+    x: amountCard.x,
+    y: amountLabelBaselineY,
+    fonts,
+    weight: "bold",
+    fontSize: amountLabelFontSize,
+    color: pdfDesignTokens.colors.amountNavy,
+  });
+  h.drawPdfText({
+    page,
+    text: formatCurrency(displayTotal),
+    x: amountCard.x + amountCard.width,
+    y: amountValueBaselineY,
+    fonts,
+    weight: "bold",
+    fontSize: amountValueFontSize,
+    color: pdfDesignTokens.colors.amountNavy,
+    align: "right",
+  });
+
+  drawFormalQuoteTable(page, fonts, lines);
+
+  if (isLastPage) {
+    drawFormalQuoteBottom(page, fonts, input);
+  }
+
+  h.drawPdfText({
+    page,
+    text: `${pageIndex + 1} / ${pageCount}ページ`,
+    x: layout.right,
+    y: layout.footerY,
+    fonts,
+    fontSize: 6.8,
+    color: pdfDesignTokens.colors.muted,
+    align: "right",
+  });
+}
+
+function drawFormalQuoteMeta(page: PdfPage, fonts: PdfFontSet, codeFont: PDFFont, input: QuotePdfInput, x: number, y: number) {
+  const { project, meta } = input;
+  const rows: Array<[string, string]> = [
+    ["発行日", formatDate(meta.issuedAt ?? new Date().toISOString().slice(0, 10))],
+    ["有効期限", formatDate(meta.expiresAt)],
+    ["見積No.", compactFormalQuoteCodeText(meta.documentNumber ?? project.id.toUpperCase())],
+    ["案件No.", compactFormalQuoteCodeText(project.projectNumber || project.id.toUpperCase())],
+  ];
+  rows.forEach(([label, value], index) => {
+    const rowY = y - index * 12.2;
+    pdfFormalDrawingHelpers.drawPdfLabel({
+      page,
+      text: label,
+      x,
+      y: rowY,
+      fonts,
+      fontSize: 7.3,
+      color: formalQuoteTypographyTone.metaLabel,
+      maxWidth: 44,
+    });
+    drawFormalQuotePlainText(page, value || "-", {
+      x: x + 50,
+      y: rowY,
+      font: codeFont,
+      size: 7.3,
+      color: formalQuoteTypographyTone.metaValue,
+    });
+  });
+}
+
+async function drawFormalQuoteLogo(
+  pdfDoc: PDFDocument,
+  page: PdfPage,
+  companyInfo: CompanyInfoState,
+  settings: ProjectSealSettings,
+  rightX: number,
+  topY: number,
+) {
+  if (settings.logoEnabled === false || !companyInfo.logoImage) return;
+  try {
+    const logo = await embedPdfImage(pdfDoc, companyInfo.logoImage);
+    const maxWidth = Math.max(40, pdfDesignTokens.media.logoMaxWidth * (settings.logoScale / 100));
+    const maxHeight = Math.max(18, pdfDesignTokens.media.logoMaxHeight * (settings.logoScale / 100));
+    const fit = fitPdfImageWithinBox(logo, maxWidth, maxHeight);
+    const configuredCenterX = (settings.logoX / 1000) * formalQuotePdfLayout.pageWidth;
+    const configuredCenterY = formalQuotePdfLayout.pageHeight - (settings.logoY / 1000) * formalQuotePdfLayout.pageHeight;
+    const beforeClampX = configuredCenterX - fit.width / 2;
+    const beforeClampY = configuredCenterY - fit.height / 2;
+    const x = clampNumber(beforeClampX, 0, Math.max(0, formalQuotePdfLayout.pageWidth - fit.width));
+    const y = clampNumber(beforeClampY, 0, Math.max(0, formalQuotePdfLayout.pageHeight - fit.height));
+    debugFormalQuoteSealFlow("drawFormalQuoteLogo", {
+      logoX: settings.logoX,
+      logoY: settings.logoY,
+      logoScale: settings.logoScale,
+      maxWidth,
+      maxHeight,
+      beforeClampX,
+      beforeClampY,
+      x,
+      y,
+      clampDeltaX: x - beforeClampX,
+      clampDeltaY: y - beforeClampY,
+      width: fit.width,
+      height: fit.height,
+      rightX,
+      topY,
+    });
+    page.drawImage(logo, {
+      x,
+      y,
+      width: fit.width,
+      height: fit.height,
+      opacity: settings.logoOpacity,
+    });
+  } catch (error) {
+    warnPdfImageSkip("PDFヘッダーロゴの埋め込みに失敗したためスキップします。", error);
+  }
+}
+
+function buildFormalQuoteRecipientHeader(project: Project, recipientInfo?: DocumentRecipientInfo) {
+  const companyName = recipientInfo?.companyName.trim() ?? "";
+  const contactName = recipientInfo?.contactName.trim() ?? "";
+  if (companyName && contactName) {
+    return {
+      nameLine: companyName,
+      contactLine: `${contactName} 様`,
+    };
+  }
+  if (companyName) {
+    return {
+      nameLine: `${companyName} 御中`,
+      contactLine: "",
+    };
+  }
+  if (contactName) {
+    return {
+      nameLine: `${contactName} 様`,
+      contactLine: "",
+    };
+  }
+  return {
+    nameLine: getDocumentRecipientName(project, recipientInfo),
+    contactLine: "",
+  };
+}
+
+function normalizeFormalQuotePostalCode(value: unknown) {
+  const normalized = String(value ?? "")
+    .normalize("NFKC")
+    .replace(/〒/g, "")
+    .trim();
+  if (!normalized) return "";
+  const match = normalized.match(/(\d{3})[\-‐‑‒–—―ー−]?(\d{4})/u);
+  if (!match) return `〒${normalized}`;
+  return `〒${match[1]}-${match[2]}`;
+}
+
+function splitFormalQuotePostalAddress(address: unknown, postalCode?: unknown) {
+  const rawAddress = String(address ?? "").trim();
+  const explicitPostalLine = normalizeFormalQuotePostalCode(postalCode);
+  const postalPattern = /^\s*〒?\s*(\d{3}[\-‐‑‒–—―ー−]?\d{4})\s*/u;
+  if (explicitPostalLine) {
+    return {
+      postalLine: explicitPostalLine,
+      addressLine: rawAddress.replace(postalPattern, "").trim(),
+    };
+  }
+  const match = rawAddress.match(postalPattern);
+  if (!match) {
+    return {
+      postalLine: "",
+      addressLine: rawAddress,
+    };
+  }
+  return {
+    postalLine: normalizeFormalQuotePostalCode(match[1]),
+    addressLine: rawAddress.slice(match[0].length).trim(),
+  };
+}
+
+function getFormalQuoteRecipientPostalCode(recipientInfo?: DocumentRecipientInfo) {
+  const optionalPostalCode = (recipientInfo as (DocumentRecipientInfo & { postalCode?: unknown }) | undefined)?.postalCode;
+  return normalizeFormalQuotePostalCode(optionalPostalCode);
+}
+
+function getFormalQuoteWrappedLineCount(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  font: PDFFont,
+  maxLines: number,
+) {
+  if (!text) return 0;
+  return wrapPdfText(text, maxWidth, fontSize, font).slice(0, maxLines).length || 1;
+}
+
+function drawFormalQuoteInfoText({
+  page,
+  text,
+  x,
+  y,
+  fonts,
+  weight = "medium",
+  fontSize,
+  color,
+  maxWidth,
+  maxLines = 1,
+  lineGap,
+  nextGap,
+}: {
+  page: PdfPage;
+  text: string;
+  x: number;
+  y: number;
+  fonts: PdfFontSet;
+  weight?: PdfFontWeight;
+  fontSize: number;
+  color: PdfColor;
+  maxWidth: number;
+  maxLines?: number;
+  lineGap: number;
+  nextGap: number;
+}) {
+  if (!text) return y;
+  const lineCount = getFormalQuoteWrappedLineCount(text, maxWidth, fontSize, getPdfFont(fonts, weight), maxLines);
+  pdfFormalDrawingHelpers.drawPdfText({
+    page,
+    text,
+    x,
+    y,
+    fonts,
+    weight,
+    fontSize,
+    color,
+    maxWidth,
+    maxLines,
+    lineHeight: lineGap / fontSize,
+  });
+  return y - Math.max(0, lineCount - 1) * lineGap - nextGap;
+}
+
+function drawFormalQuotePlainInfoText({
+  page,
+  text,
+  x,
+  y,
+  font,
+  fontSize,
+  color,
+  nextGap,
+}: {
+  page: PdfPage;
+  text: string;
+  x: number;
+  y: number;
+  font: PDFFont;
+  fontSize: number;
+  color: PdfColor;
+  nextGap: number;
+}) {
+  if (!text) return y;
+  drawFormalQuotePlainText(page, text, {
+    x,
+    y,
+    font,
+    size: fontSize,
+    color,
+  });
+  return y - nextGap;
+}
+
+function drawFormalQuoteRecipientBlock(page: PdfPage, fonts: PdfFontSet, codeFont: PDFFont, input: QuotePdfInput, x: number, y: number) {
+  const recipientHeader = buildFormalQuoteRecipientHeader(input.project, input.recipientInfo);
+  const recipientNameFontSize = 15;
+  const recipientNameLineHeight = 1.22;
+  const recipientNameMaxWidth = 235;
+  const recipientNameY = y - 8;
+  const recipientNameLineCount = wrapPdfText(
+    recipientHeader.nameLine,
+    recipientNameMaxWidth,
+    recipientNameFontSize,
+    getPdfFont(fonts, "bold"),
+  ).slice(0, 2).length || 1;
+  let detailStartY = recipientNameY - Math.max(0, recipientNameLineCount - 1) * recipientNameFontSize * recipientNameLineHeight - 19;
+  pdfFormalDrawingHelpers.drawPdfText({
+    page,
+    text: recipientHeader.nameLine,
+    x,
+    y: recipientNameY,
+    fonts,
+    weight: "bold",
+    fontSize: recipientNameFontSize,
+    color: formalQuoteTypographyTone.primaryName,
+    maxWidth: recipientNameMaxWidth,
+    maxLines: 2,
+    lineHeight: recipientNameLineHeight,
+  });
+  if (recipientHeader.contactLine) {
+    detailStartY = drawFormalQuoteInfoText({
+      page,
+      text: recipientHeader.contactLine,
+      x,
+      y: detailStartY,
+      fonts,
+      weight: "medium",
+      fontSize: 8.4,
+      color: formalQuoteTypographyTone.supportText,
+      maxWidth: recipientNameMaxWidth,
+      lineGap: 10.4,
+      nextGap: 12.4,
+    });
+  }
+  drawFormalQuoteRecipientDetails(page, fonts, codeFont, input.recipientInfo, x, detailStartY);
+}
+
+function drawFormalQuoteRecipientDetails(
+  page: PdfPage,
+  fonts: PdfFontSet,
+  codeFont: PDFFont,
+  recipientInfo: DocumentRecipientInfo | undefined,
+  x: number,
+  y: number,
+) {
+  const contactLines = formatFormalQuoteContactLines({ tel: recipientInfo?.phone });
+  const { postalLine, addressLine } = splitFormalQuotePostalAddress(
+    recipientInfo?.address,
+    getFormalQuoteRecipientPostalCode(recipientInfo),
+  );
+  const maxWidth = 230;
+  const fontSize = 8;
+  let cursorY = y;
+  cursorY = drawFormalQuoteInfoText({
+    page,
+    text: postalLine,
+    x,
+    y: cursorY,
+    fonts,
+    weight: "medium",
+    fontSize,
+    color: formalQuoteTypographyTone.supportText,
+    maxWidth,
+    lineGap: 10,
+    nextGap: 11.3,
+  });
+  cursorY = drawFormalQuoteInfoText({
+    page,
+    text: addressLine,
+    x,
+    y: cursorY,
+    fonts,
+    weight: "medium",
+    fontSize,
+    color: formalQuoteTypographyTone.supportText,
+    maxWidth,
+    maxLines: 2,
+    lineGap: 10,
+    nextGap: 11.5,
+  });
+  contactLines.forEach((text) => {
+    cursorY = drawFormalQuotePlainInfoText({
+      page,
+      text,
+      x,
+      y: cursorY,
+      font: codeFont,
+      fontSize: 8,
+      color: formalQuoteTypographyTone.supportText,
+      nextGap: 11,
+    });
+  });
+}
+
+function formatFormalQuoteIssuerContactLine(companyInfo: CompanyInfoState) {
+  const contactName = (companyInfo.contactName || "").trim();
+  const contactPosition =
+    typeof companyInfo.contactPosition === "string"
+      ? companyInfo.contactPosition.trim()
+      : (companyInfo.contactTitle || "").trim();
+  if (contactName && contactPosition) return `${contactName}　${contactPosition}`;
+  return contactName || contactPosition;
+}
+
+function drawFormalQuoteCompanyBlock(
+  page: PdfPage,
+  fonts: PdfFontSet,
+  codeFont: PDFFont,
+  companyInfo: CompanyInfoState,
+  rightX: number,
+  topY: number,
+) {
+  const originalMaxWidth = 145;
+  const rightShift = formalQuotePdfLayout.companyBlockRightShift;
+  const maxWidth = originalMaxWidth - rightShift;
+  const x = rightX - maxWidth;
+  const contactLine = formatFormalQuoteIssuerContactLine(companyInfo);
+  const contactLines = formatFormalQuoteContactLines({ tel: companyInfo.phone, fax: companyInfo.fax });
+  const { postalLine, addressLine } = splitFormalQuotePostalAddress(companyInfo.headOfficeAddress, companyInfo.postalCode);
+  let cursorY = topY;
+  cursorY = drawFormalQuoteInfoText({
+    page,
+    text: companyInfo.legalName,
+    x,
+    y: cursorY,
+    fonts,
+    weight: "bold",
+    fontSize: 8.6,
+    color: formalQuoteTypographyTone.primaryName,
+    maxWidth,
+    lineGap: 10.6,
+    nextGap: 16.2,
+  });
+  cursorY = drawFormalQuoteInfoText({
+    page,
+    text: contactLine,
+    x,
+    y: cursorY,
+    fonts,
+    weight: "medium",
+    fontSize: 6.9,
+    color: formalQuoteTypographyTone.supportText,
+    maxWidth,
+    maxLines: 2,
+    lineGap: 9,
+    nextGap: 10.8,
+  });
+  cursorY = drawFormalQuoteInfoText({
+    page,
+    text: postalLine,
+    x,
+    y: cursorY,
+    fonts,
+    weight: "medium",
+    fontSize: 6.9,
+    color: formalQuoteTypographyTone.supportText,
+    maxWidth,
+    lineGap: 9,
+    nextGap: 10.6,
+  });
+  cursorY = drawFormalQuoteInfoText({
+    page,
+    text: addressLine,
+    x,
+    y: cursorY,
+    fonts,
+    weight: "medium",
+    fontSize: 6.9,
+    color: formalQuoteTypographyTone.supportText,
+    maxWidth,
+    maxLines: 2,
+    lineGap: 9.2,
+    nextGap: 10.8,
+  });
+  contactLines.forEach((text) => {
+    cursorY = drawFormalQuotePlainInfoText({
+      page,
+      text,
+      x,
+      y: cursorY,
+      font: codeFont,
+      fontSize: 6.8,
+      color: formalQuoteTypographyTone.supportText,
+      nextGap: 10.2,
+    });
+  });
+}
+
+function formatFormalQuoteContactLines({ tel, fax }: { tel?: string; fax?: string }) {
+  const telNumber = formatFormalQuoteContactNumber(tel);
+  const faxNumber = formatFormalQuoteContactNumber(fax);
+  return [
+    telNumber ? `TEL ${telNumber}` : "",
+    faxNumber ? `FAX ${faxNumber}` : "",
+  ].filter(Boolean);
+}
+
+function formatFormalQuoteContactNumber(value?: string) {
+  return compactFormalQuotePhoneText(value);
+}
+
+function compactFormalQuoteCodeText(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/[\s\u00a0\u1680\u180e\u2000-\u200d\u2028\u2029\u202f\u205f\u3000\ufeff]+/g, "")
+    .trim();
+}
+
+function compactFormalQuotePhoneText(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replace(/^(TEL|FAX|電話|ファックス)[:：\s]*/i, "")
+    .replace(/[\s\u00a0\u1680\u180e\u2000-\u200d\u2028\u2029\u202f\u205f\u3000\ufeff]+/g, "")
+    .trim();
+}
+
+async function drawFormalQuoteSeal(
+  pdfDoc: PDFDocument,
+  page: PdfPage,
+  companyInfo: CompanyInfoState,
+  templateSettings: PdfTemplateSettingsState,
+  sealSettings: ProjectSealSettings,
+) {
+  const sealImage = getActiveSealImage(companyInfo, sealSettings);
+  debugFormalQuoteSealFlow("drawFormalQuoteSeal input", {
+    enabled: sealSettings.enabled,
+    hasActiveSealImage: Boolean(sealImage),
+    hasSealSettingsImage: Boolean(sealSettings.sealImage),
+    hasCompanySealImage: Boolean(companyInfo.sealImage),
+    xSetting: sealSettings.x,
+    ySetting: sealSettings.y,
+    scale: sealSettings.scale,
+    opacity: sealSettings.opacity,
+  });
+  if (!sealImage) return;
+  try {
+    const seal = await embedPdfImage(pdfDoc, sealImage);
+    const scale = sealSettings.scale / 100;
+    const maxWidth = Math.max(32, templateSettings.sealSize * 0.75 * scale);
+    const maxHeight = Math.max(24, templateSettings.sealSize * 0.58 * scale);
+    const fit = fitPdfImageWithinBox(seal, maxWidth, maxHeight);
+    const configuredCenterX = (sealSettings.x / 1000) * formalQuotePdfLayout.pageWidth;
+    const configuredCenterY = formalQuotePdfLayout.pageHeight - (sealSettings.y / 1000) * formalQuotePdfLayout.pageHeight;
+    const beforeClampX = configuredCenterX - fit.width / 2;
+    const beforeClampY = configuredCenterY - fit.height / 2;
+    const x = clampNumber(beforeClampX, 0, Math.max(0, formalQuotePdfLayout.pageWidth - fit.width));
+    const y = clampNumber(beforeClampY, 0, Math.max(0, formalQuotePdfLayout.pageHeight - fit.height));
+    debugFormalQuoteSealFlow("drawFormalQuoteSeal", {
+      enabled: sealSettings.enabled,
+      xSetting: sealSettings.x,
+      ySetting: sealSettings.y,
+      scale: sealSettings.scale,
+      opacity: sealSettings.opacity,
+      maxWidth,
+      maxHeight,
+      beforeClampX,
+      beforeClampY,
+      x,
+      y,
+      clampDeltaX: x - beforeClampX,
+      clampDeltaY: y - beforeClampY,
+      width: fit.width,
+      height: fit.height,
+    });
+    page.drawImage(seal, {
+      x,
+      y,
+      width: fit.width,
+      height: fit.height,
+      opacity: sealSettings.opacity,
+    });
+  } catch (error) {
+    warnPdfImageSkip("PDF社判画像の埋め込みに失敗したためスキップします。", error);
+  }
+}
+
+function drawFormalQuoteTable(page: PdfPage, fonts: PdfFontSet, lines: QuotePdfLine[]) {
+  const h = pdfFormalDrawingHelpers;
+  const layout = formalQuotePdfLayout;
+  const { columns } = layout;
+  h.drawPdfSectionTitle({
+    page,
+    title: "見積明細",
+    x: layout.margin,
+    y: layout.tableHeaderY + 24,
+    width: layout.contentWidth,
+    fonts,
+    fontSize: 9,
+    color: pdfDesignTokens.colors.ink,
+  });
+  h.drawPdfRoundedCard({
+    page,
+    x: layout.margin,
+    y: layout.tableHeaderY - 17,
+    width: layout.contentWidth,
+    height: 24,
+    radius: 5,
+    fillColor: rgb(0.945, 0.96, 0.98),
+    borderColor: pdfDesignTokens.colors.rule,
+    borderWidth: pdfDesignTokens.border.hairline,
+  });
+  const headerColumns: Array<[string, number, PdfTextAlign]> = [
+    ["内容", columns.itemX, "left" as const],
+    ["数量", columns.quantityRight, "right" as const],
+    ["単価", columns.unitPriceRight, "right" as const],
+    ["金額", columns.amountRight, "right" as const],
+  ];
+  headerColumns.forEach(([label, x, align]) => {
+    h.drawPdfText({
+      page,
+      text: label,
+      x,
+      y: layout.tableHeaderY - 8,
+      fonts,
+      weight: "medium",
+      fontSize: 7.8,
+      color: pdfDesignTokens.colors.text,
+      align,
+    });
+  });
+
+  let y = layout.tableFirstRowY;
+  lines.forEach(({ item, line, unitPrice }, index) => {
+    const measurement = measureFormalQuoteRow(item, fonts);
+    const geometry = getFormalQuoteRowGeometry(y, measurement);
+    const rowHeight = measurement.rowHeight;
+    if (index % 2 === 1) {
+      page.drawRectangle({
+        x: layout.margin,
+        y: geometry.rowBottomY,
+        width: layout.contentWidth,
+        height: rowHeight,
+        color: rgb(0.988, 0.992, 0.996),
+      });
+    }
+    drawFormalQuoteLineContent(page, fonts, measurement, columns.itemX, geometry.mainTextY, columns.itemWidth);
+    h.drawPdfText({
+      page,
+      text: `${formatNumber(item.quantity)}${item.unit}`,
+      x: columns.quantityRight,
+      y: geometry.numericTextY,
+      fonts,
+      weight: "medium",
+      fontSize: 8,
+      color: pdfDesignTokens.colors.ink,
+      align: "right",
+    });
+    h.drawPdfText({
+      page,
+      text: formatCurrency(unitPrice),
+      x: columns.unitPriceRight,
+      y: geometry.numericTextY,
+      fonts,
+      weight: "medium",
+      fontSize: 8,
+      color: pdfDesignTokens.colors.ink,
+      align: "right",
+    });
+    h.drawPdfText({
+      page,
+      text: formatCurrency(line.subtotal),
+      x: columns.amountRight,
+      y: geometry.numericTextY,
+      fonts,
+      weight: "bold",
+      fontSize: 8.5,
+      color: pdfDesignTokens.colors.amountNavy,
+      align: "right",
+    });
+    h.drawPdfRule({
+      page,
+      x: layout.margin,
+      y: geometry.rowBottomY,
+      width: layout.contentWidth,
+      color: pdfDesignTokens.colors.rule,
+      thickness: pdfDesignTokens.border.hairline,
+    });
+    y -= rowHeight;
+  });
+
+  if (lines.length === 0) {
+    h.drawPdfText({
+      page,
+      text: "明細がありません",
+      x: layout.margin + layout.contentWidth / 2,
+      y: 344,
+      fonts,
+      fontSize: 9,
+      color: pdfDesignTokens.colors.muted,
+      align: "center",
+    });
+  }
+}
+
+function drawFormalQuoteLineContent(
+  page: PdfPage,
+  fonts: PdfFontSet,
+  measurement: FormalQuoteRowMeasurement,
+  x: number,
+  y: number,
+  maxWidth: number,
+) {
+  const metrics = formalQuoteTableMetrics;
+  measurement.mainLines.forEach((line, index) => {
+    const lineY = y - index * metrics.mainLineHeight;
+    if (!line.category) {
+      pdfFormalDrawingHelpers.drawPdfText({
+        page,
+        text: line.text || "工事項目",
+        x: x + line.xOffset,
+        y: lineY,
+        fonts,
+        weight: "medium",
+        fontSize: metrics.mainFontSize,
+        color: pdfDesignTokens.colors.ink,
+        maxWidth: line.maxWidth,
+        maxLines: 1,
+      });
+      return;
+    }
+    pdfFormalDrawingHelpers.drawPdfText({
+      page,
+      text: line.category,
+      x,
+      y: lineY,
+      fonts,
+      weight: "medium",
+      fontSize: metrics.mainFontSize,
+      color: pdfDesignTokens.colors.primaryBlue,
+      maxWidth,
+      maxLines: 1,
+    });
+    pdfFormalDrawingHelpers.drawPdfText({
+      page,
+      text: line.text || "-",
+      x: x + line.xOffset,
+      y: lineY,
+      fonts,
+      weight: "medium",
+      fontSize: metrics.mainFontSize,
+      color: pdfDesignTokens.colors.ink,
+      maxWidth: line.maxWidth,
+      maxLines: 1,
+    });
+  });
+
+  if (measurement.specLines.length > 0) {
+    const specStartY = y - measurement.mainLines.length * metrics.mainLineHeight - metrics.mainSpecGap;
+    const specX = x + metrics.specXOffset;
+    const specWidth = maxWidth - metrics.specXOffset;
+    measurement.specLines.forEach((line, index) => {
+      pdfFormalDrawingHelpers.drawPdfText({
+        page,
+        text: line,
+        x: specX,
+        y: specStartY - index * metrics.specLineHeight,
+        fonts,
+        weight: "regular",
+        fontSize: metrics.specFontSize,
+        color: pdfDesignTokens.colors.text,
+        maxWidth: specWidth,
+        maxLines: 1,
+      });
+    });
+  }
+}
+
+function drawFormalQuoteBottom(page: PdfPage, fonts: PdfFontSet, input: QuotePdfInput) {
+  const { meta, totals, taxRate } = input;
+  const h = pdfFormalDrawingHelpers;
+  const layout = formalQuotePdfLayout;
+  const notesBox = h.drawPdfRoundedCard({
+    page,
+    x: layout.bottom.notesX,
+    y: layout.bottomY,
+    width: layout.bottom.notesWidth,
+    height: 78,
+    radius: pdfDesignTokens.radius.card,
+    padding: 10,
+    fillColor: pdfDesignTokens.colors.card,
+    borderColor: pdfDesignTokens.colors.rule,
+    borderWidth: pdfDesignTokens.border.hairline,
+  });
+  h.drawPdfLabel({
+    page,
+    text: "備考",
+    x: notesBox.x,
+    y: notesBox.y + notesBox.height - 8,
+    fonts,
+    fontSize: 8.2,
+    color: pdfDesignTokens.colors.ink,
+  });
+  h.drawPdfValue({
+    page,
+    text: meta.remarks || "ご不明点がございましたら担当者までお問い合わせください。",
+    x: notesBox.x,
+    y: notesBox.y + notesBox.height - 25,
+    fonts,
+    fontSize: 7.4,
+    color: pdfDesignTokens.colors.text,
+    maxWidth: notesBox.width,
+    maxLines: 4,
+    lineHeight: 1.35,
+  });
+
+  h.drawPdfRoundedCard({
+    page,
+    x: layout.bottom.totalsX,
+    y: layout.totalsY,
+    width: layout.bottom.totalsWidth,
+    height: 94,
+    radius: pdfDesignTokens.radius.card,
+    padding: 10,
+    fillColor: rgb(0.996, 0.998, 1),
+    borderColor: pdfDesignTokens.colors.rule,
+    borderWidth: pdfDesignTokens.border.hairline,
+  });
+  drawFormalQuoteTotals(page, fonts, [
+    ["材料費合計", totals.materialCost],
+    ["労務費合計", totals.laborCost],
+    ["法定福利費", totals.welfareCost],
+    ["経費・管理費", totals.expenseCost + totals.commonTemporaryCost + totals.siteManagementCost],
+    ["見積金額（税抜）", totals.beforeTax],
+    [formatConsumptionTaxLabel(taxRate), totals.tax],
+    ["御見積合計額（税込）", totals.afterTax, true],
+  ], layout.bottom.totalsX + 10, layout.totalsY + 81);
+}
+
+function drawFormalQuoteTotals(
+  page: PdfPage,
+  fonts: PdfFontSet,
+  rows: Array<[string, number] | [string, number, boolean]>,
+  x: number,
+  y: number,
+) {
+  const h = pdfFormalDrawingHelpers;
+  const rightX = formalQuotePdfLayout.right - 10;
+  rows.forEach(([label, value, strong], index) => {
+    const normalRowGap = 11;
+    const finalRowGap = 15;
+    const finalIndex = rows.length - 1;
+    const rowY = strong ? y - (finalIndex - 1) * normalRowGap - finalRowGap : y - index * normalRowGap;
+    h.drawPdfText({
+      page,
+      text: label,
+      x,
+      y: rowY,
+      fonts,
+      weight: strong ? "bold" : "regular",
+      fontSize: strong ? 8.8 : 7.4,
+      color: strong ? pdfDesignTokens.colors.amountNavy : pdfDesignTokens.colors.text,
+    });
+    h.drawPdfText({
+      page,
+      text: formatCurrency(value),
+      x: rightX,
+      y: rowY,
+      fonts,
+      weight: strong ? "bold" : "medium",
+      fontSize: strong ? 10.8 : 7.8,
+      color: strong ? pdfDesignTokens.colors.amountNavy : pdfDesignTokens.colors.ink,
+      align: "right",
+    });
+    if (strong) {
+      h.drawPdfRule({
+        page,
+        x,
+        y: rowY + 12,
+        width: formalQuotePdfLayout.bottom.totalsWidth - 20,
+        color: rgb(0.749, 0.859, 0.996),
+        thickness: pdfDesignTokens.border.emphasis,
+      });
+    }
+  });
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
 async function drawQuotePdfPage(
   pdfDoc: PDFDocument,
   page: ReturnType<PDFDocument["addPage"]>,
@@ -419,8 +2106,8 @@ async function drawQuotePdfPage(
 
   drawQuoteMetaLine(page, "発行日", formatDate(meta.issuedAt ?? new Date().toISOString().slice(0, 10)), layout.x, 786, font, slate, ink);
   drawQuoteMetaLine(page, "有効期限", formatDate(meta.expiresAt), layout.x, 772, font, slate, ink);
-  drawQuoteMetaLine(page, "No.", meta.documentNumber ?? project.id.toUpperCase(), layout.x, 758, font, slate, ink);
-  drawQuoteMetaLine(page, "案件No.", project.projectNumber || project.id.toUpperCase(), layout.x, 744, font, slate, ink);
+  drawQuoteMetaLine(page, "No.", meta.documentNumber ?? project.id.toUpperCase(), layout.x, 758, font, slate, ink, { compactValue: true });
+  drawQuoteMetaLine(page, "案件No.", project.projectNumber || project.id.toUpperCase(), layout.x, 744, font, slate, ink, { compactValue: true });
   drawPdfStrongCenteredText(page, title || "御見積書", 297.64, 761, 27, font, ink, quotePdfStrongOffsets.title);
   await drawPdfHeaderLogo(pdfDoc, page, companyInfo, sealSettings);
   drawPdfRightText(page, `${pageIndex + 1} / ${pageCount}ページ`, layout.right, 31, 6.6, font, rgb(0.64, 0.69, 0.76));
@@ -429,8 +2116,8 @@ async function drawQuotePdfPage(
   drawRule(page, layout.x, 696, layout.width, rule);
   drawPdfText(page, "御中", layout.x, 668, 8.5, font, muted);
   drawPdfStrongText(page, getDocumentRecipientName(project, input.recipientInfo), layout.x, 646, 19.2, font, ink, quotePdfStrongOffsets.recipient);
-  drawPdfRecipientDetails(page, font, input.recipientInfo, layout.x, 626, 230, muted);
-  drawPdfCompanyInline(page, font, companyInfo, layout.right, 670);
+  drawPdfRecipientDetails(page, font, input.recipientInfo, layout.x, 626, 230, muted, { compactContact: true });
+  drawPdfCompanyInline(page, font, companyInfo, layout.right, 670, { compactContact: true });
   drawRule(page, layout.x, 606, layout.width, rule);
 
   drawRoundedBox(page, layout.x, 542, layout.width, 50, 9, rgb(0.973, 0.98, 0.99), rgb(0.886, 0.91, 0.941), 1);
@@ -756,10 +2443,35 @@ async function drawPdfSeal(
 
 async function embedPdfImage(pdfDoc: PDFDocument, dataUrl: string) {
   const resolvedDataUrl = await loadImageAsset(dataUrl);
-  const bytes = await dataUrlToBytes(resolvedDataUrl);
-  if (resolvedDataUrl.startsWith("data:image/png")) return pdfDoc.embedPng(bytes);
-  if (resolvedDataUrl.startsWith("data:image/jpeg") || resolvedDataUrl.startsWith("data:image/jpg")) return pdfDoc.embedJpg(bytes);
-  throw new Error("PDFに埋め込める画像はPNGまたはJPEGです");
+  if (resolvedDataUrl.startsWith("data:image/png")) return pdfDoc.embedPng(await dataUrlToBytes(resolvedDataUrl));
+  if (resolvedDataUrl.startsWith("data:image/jpeg") || resolvedDataUrl.startsWith("data:image/jpg")) {
+    return pdfDoc.embedJpg(await dataUrlToBytes(resolvedDataUrl));
+  }
+  if (resolvedDataUrl.startsWith("data:image/")) {
+    const pngDataUrl = await convertImageDataUrlToPng(resolvedDataUrl);
+    return pdfDoc.embedPng(await dataUrlToBytes(pngDataUrl));
+  }
+  throw new Error("PDFに埋め込める画像は画像data URL形式のみです");
+}
+
+async function convertImageDataUrlToPng(dataUrl: string) {
+  if (typeof document === "undefined") {
+    throw new Error("この環境では画像形式をPDF用PNGへ変換できません。");
+  }
+  const image = await loadImage(dataUrl);
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+  if (!width || !height) {
+    throw new Error("PDF用画像のサイズを取得できませんでした。");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("PDF用画像変換Canvasを作成できませんでした。");
+  context.clearRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL("image/png");
 }
 
 function drawCoverImage(
@@ -804,6 +2516,7 @@ function drawPdfStrongText(
   color = rgb(0.06, 0.09, 0.16),
   offset = 0.22,
 ) {
+  // TODO(PDF-02): replace this pseudo-bold pass with PdfFontSet.bold after the formal PDF helpers land.
   const verticalOffset = Math.min(0.16, Math.max(0.05, offset * 0.38));
   drawPdfText(page, text, x, y, size, font, color);
   if (offset <= 0) return;
@@ -987,11 +2700,23 @@ function drawQuoteMetaLine(
   font: Awaited<ReturnType<PDFDocument["embedFont"]>>,
   labelColor: ReturnType<typeof rgb>,
   valueColor: ReturnType<typeof rgb>,
+  options: { compactValue?: boolean } = {},
 ) {
   const size = 8.2;
   drawPdfText(page, `${label} `, x, y, size, font, labelColor);
   const labelWidth = font.widthOfTextAtSize(`${label} `, size);
-  drawPdfStrongText(page, value || "-", x + labelWidth, y, size, font, valueColor, quotePdfStrongOffsets.metaValue);
+  const displayValue = options.compactValue ? compactFormalQuoteCodeText(value) : value;
+  if (options.compactValue) {
+    drawFormalQuotePlainText(page, displayValue || "-", {
+      x: x + labelWidth,
+      y,
+      font,
+      size,
+      color: valueColor,
+    });
+    return;
+  }
+  drawPdfStrongText(page, displayValue || "-", x + labelWidth, y, size, font, valueColor, quotePdfStrongOffsets.metaValue);
 }
 
 function drawQuoteTableHeader(
@@ -1112,15 +2837,33 @@ function drawPdfCompanyInline(
   companyInfo: CompanyInfoState,
   rightX: number,
   topY: number,
+  options: { compactContact?: boolean } = {},
 ) {
+  const contactLines = options.compactContact
+    ? formatFormalQuoteContactLines({ tel: companyInfo.phone, fax: companyInfo.fax })
+    : [`TEL ${companyInfo.phone} / FAX ${companyInfo.fax}`.trim()].filter(Boolean);
   const lines = [
-    companyInfo.legalName,
-    `〒${companyInfo.postalCode} ${companyInfo.headOfficeAddress}`,
-    `TEL ${companyInfo.phone} / FAX ${companyInfo.fax}`,
-    `${companyInfo.contactTitle} ${companyInfo.contactName}`,
-  ].filter(Boolean);
+    { text: companyInfo.legalName, plain: false },
+    { text: `〒${companyInfo.postalCode} ${companyInfo.headOfficeAddress}`, plain: false },
+    ...contactLines.map((text) => ({ text, plain: options.compactContact })),
+    { text: `${companyInfo.contactTitle} ${companyInfo.contactName}`, plain: false },
+  ].filter((line) => line.text);
   lines.forEach((line, index) => {
-    drawPdfRightText(page, line, rightX, topY - index * 13, index === 0 ? 9.5 : 7.5, font, index === 0 ? rgb(0.06, 0.09, 0.16) : rgb(0.278, 0.333, 0.412));
+    const size = index === 0 ? 9.5 : 7.5;
+    const color = index === 0 ? rgb(0.06, 0.09, 0.16) : rgb(0.278, 0.333, 0.412);
+    const y = topY - index * 13;
+    if (line.plain) {
+      drawFormalQuotePlainText(page, line.text, {
+        x: rightX,
+        y,
+        font,
+        size,
+        color,
+        align: "right",
+      });
+      return;
+    }
+    drawPdfRightText(page, line.text, rightX, y, size, font, color);
   });
 }
 
@@ -1136,15 +2879,30 @@ function drawPdfRecipientDetails(
   y: number,
   maxWidth: number,
   color: ReturnType<typeof rgb>,
+  options: { compactContact?: boolean } = {},
 ) {
   const contactName = recipientInfo?.companyName && recipientInfo.contactName ? `${recipientInfo.contactName} 様` : "";
+  const contactLines = options.compactContact
+    ? formatFormalQuoteContactLines({ tel: recipientInfo?.phone })
+    : [recipientInfo?.phone ? `TEL ${recipientInfo.phone}` : ""].filter(Boolean);
   const detailLines = [
-    contactName,
-    recipientInfo?.address ? `住所 ${recipientInfo.address}` : "",
-    recipientInfo?.phone ? `TEL ${recipientInfo.phone}` : "",
-  ].filter(Boolean);
+    { text: contactName, plain: false },
+    { text: recipientInfo?.address ? `住所 ${recipientInfo.address}` : "", plain: false },
+    ...contactLines.map((text) => ({ text, plain: options.compactContact })),
+  ].filter((line) => line.text);
   detailLines.forEach((line, index) => {
-    drawWrappedText(page, line, x, y - index * 10, maxWidth, 7.2, 9.5, font, color, 1);
+    const rowY = y - index * 10;
+    if (line.plain) {
+      drawFormalQuotePlainText(page, line.text, {
+        x,
+        y: rowY,
+        font,
+        size: 7.2,
+        color,
+      });
+      return;
+    }
+    drawWrappedText(page, line.text, x, rowY, maxWidth, 7.2, 9.5, font, color, 1);
   });
 }
 
@@ -1172,7 +2930,10 @@ function buildQuotePdfHtml({
   taxRate: number;
 }, options: PrintDocumentRenderOptions = {}) {
   const issuedAt = meta.issuedAt ?? new Date().toISOString().slice(0, 10);
-  const documentNumber = meta.documentNumber ?? project.id.toUpperCase();
+  const documentNumberRaw = meta.documentNumber ?? project.id.toUpperCase();
+  const projectNumberRaw = project.projectNumber || project.id.toUpperCase();
+  const documentNumber = compactFormalQuoteCodeText(documentNumberRaw);
+  const projectNumber = compactFormalQuoteCodeText(projectNumberRaw);
   const displayTotal = meta.displayTotal ?? totals.afterTax;
   const pages = paginateQuoteLines(lines);
 
@@ -1197,8 +2958,8 @@ function buildQuotePdfHtml({
         <div class="meta">
           <p>発行日 <strong>${formatDate(issuedAt)}</strong></p>
           <p>有効期限 <strong>${escapeHtml(formatDate(meta.expiresAt))}</strong></p>
-          <p>No. <strong>${escapeHtml(documentNumber)}</strong></p>
-          <p>案件No. <strong>${escapeHtml(project.projectNumber || project.id.toUpperCase())}</strong></p>
+          <p class="quote-meta-row">No. <strong>${buildQuoteTrackingSafeText(documentNumber, "quote-meta-code")}</strong></p>
+          <p class="quote-meta-row">案件No. <strong>${buildQuoteTrackingSafeText(projectNumber, "quote-meta-code")}</strong></p>
         </div>
         <h1>${escapeHtml(title || "御見積書")}</h1>
         <div class="logo-slot" aria-hidden="true">
@@ -1208,16 +2969,16 @@ function buildQuotePdfHtml({
       <section class="recipient">
         <div>
           <p class="label">御中</p>
-          <p class="client">${escapeHtml(getDocumentRecipientName(project, recipientInfo))}</p>
-          ${buildPdfRecipientDetailsBlock(recipientInfo)}
+          <p class="client quote-recipient-name" style="color:#334155;font-weight:800;">${escapeHtml(getDocumentRecipientName(project, recipientInfo))}</p>
+          ${buildPdfRecipientDetailsBlock(recipientInfo, { compactContact: true })}
         </div>
-        ${buildPdfCompanyInlineBlock(companyInfo)}
+        ${buildPdfCompanyInlineBlock(companyInfo, { compactContact: true })}
       </section>
 
       <section class="project-band">
         <p class="label">工事名</p>
         <p class="project-name">${escapeHtml(project.constructionName)}</p>
-        <p class="muted">${escapeHtml(project.location)}</p>
+        <p class="muted project-location">${escapeHtml(project.location)}</p>
       </section>
 
       <section class="amount-band">
@@ -1493,6 +3254,37 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
         h1 { margin: 0; text-align: center; font-size: 35px; line-height: 1.1; letter-spacing: 0; }
         .meta { min-width: 160px; color: #475569; font-size: 10.5px; line-height: 1.7; text-align: left; }
         .meta p { margin: 0; }
+        .meta .quote-tracking-safe,
+        .recipient-detail > span.quote-tracking-safe,
+        .company-inline .quote-tracking-safe {
+          letter-spacing: 0 !important;
+          word-spacing: 0 !important;
+          text-align: left !important;
+          text-align-last: auto !important;
+          text-justify: auto !important;
+          font-kerning: normal;
+          font-variant: normal;
+          font-variant-numeric: tabular-nums;
+          font-feature-settings: "tnum" 1, "palt" 0, "pkna" 0;
+          white-space: nowrap !important;
+          word-break: keep-all !important;
+          overflow-wrap: normal !important;
+          transform: none !important;
+          unicode-bidi: isolate;
+        }
+        .meta .quote-tracking-safe,
+        .company-inline .quote-tracking-safe {
+          display: inline-block !important;
+        }
+        .recipient-detail > span.quote-tracking-safe {
+          display: block !important;
+          width: max-content;
+          max-width: 100%;
+        }
+        .quote-meta-code,
+        .quote-contact-code {
+          font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", Arial, sans-serif;
+        }
         .highlight-meta { border-left: 4px solid #10B981; padding: 7px 0 7px 12px; }
         .recipient { display: grid; grid-template-columns: .9fr 1.1fr; gap: 30px; margin-top: 38px; padding: 18px 0; border-top: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; }
         .label { margin: 0 0 8px; color: #64748b; font-size: 12px; }
@@ -1501,6 +3293,21 @@ function buildPdfShell({ body, backgroundImage, accent }: { body: string; backgr
         .recipient-detail span { display: block; overflow-wrap: anywhere; word-break: break-word; }
         .company-inline { text-align: right; color: #475569; font-size: 10px; line-height: 1.62; }
         .company-inline strong { color: #0f172a; font-size: 11px; }
+        .pdf-page.quote .quote-recipient-name {
+          color: #334155 !important;
+          font-weight: 800 !important;
+        }
+        .pdf-page.quote .quote-recipient-detail,
+        .pdf-page.quote .quote-issuer-address,
+        .pdf-page.quote .quote-issuer-person,
+        .pdf-page.quote .project-location {
+          color: #334155 !important;
+          font-weight: 500 !important;
+        }
+        .pdf-page.quote .quote-issuer-company-name {
+          color: #334155 !important;
+          font-weight: 700 !important;
+        }
         .project-band { margin-top: 18px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; padding: 13px 16px; }
         .project-name { margin: 0; color: #1E3A8A; font-size: 24px; font-weight: 900; line-height: 1.25; }
         .muted { margin: 7px 0 0; color: #64748b; font-size: 12px; }
@@ -1574,7 +3381,7 @@ export async function openPrintPreviewWindow(input: PrintPreviewInput) {
     title: `${input.project.name}_${documentTitle}_プレビュー`,
     documentTitle,
     documentHtml,
-    returnUrl: window.location.href,
+    returnUrl: window.location.toString(),
   });
   await openPrintPreviewWindowHtml(input.kind, html, `${input.project.name}_${documentTitle}_プレビュー`);
 }
@@ -1616,10 +3423,18 @@ export async function openSealPlacementEditorWindow(
     editorId,
     settings: input.sealSettings,
     baseSealSize: input.templateSettings.sealSize,
-    returnUrl: window.location.href,
+    returnUrl: window.location.toString(),
   });
 
   await openPrintPreviewWindowHtml(input.kind, html, `${input.project.name}_${documentTitle}_プレビュー`);
+}
+
+export async function openQuotePdfPreviewWindow(input: QuotePdfInput) {
+  const documentTitle = getDocumentTitle(input.kind);
+  const title = `${input.project.name}_${documentTitle}_PDFプレビュー`;
+  const pdfBytes = await generateQuotePdfBytes(input);
+  const html = buildPdfPreviewWindowHtml({ title, pdfBytes });
+  await openPrintPreviewWindowHtml(input.kind, html, title);
 }
 
 function isTauriRuntime() {
@@ -1654,14 +3469,55 @@ function openBrowserPrintPreviewWindow(
   const targetWindow = previewWindow ?? window.open(previewUrl, `mitru-${kind}-print-preview`, "width=1320,height=980");
 
   if (!targetWindow) {
-    window.location.href = previewUrl;
-    window.setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
-    return;
+    URL.revokeObjectURL(previewUrl);
+    throw new Error("プレビュー用の別ウィンドウを開けませんでした。ポップアップ許可を確認してください。");
   }
 
   targetWindow.location.href = previewUrl;
   targetWindow.focus();
   window.setTimeout(() => URL.revokeObjectURL(previewUrl), 60_000);
+}
+
+function buildPdfPreviewWindowHtml({ title, pdfBytes }: { title: string; pdfBytes: Uint8Array }) {
+  const pdfDataUrl = `data:application/pdf;base64,${encodePdfBytesAsBase64(pdfBytes)}`;
+  return `
+    <!doctype html>
+    <html lang="ja">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          html,
+          body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: #111827;
+            overflow: hidden;
+          }
+          iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            background: #111827;
+          }
+        </style>
+      </head>
+      <body>
+        <iframe title="${escapeAttr(title)}" src="${escapeAttr(pdfDataUrl)}"></iframe>
+      </body>
+    </html>
+  `;
+}
+
+function encodePdfBytesAsBase64(pdfBytes: Uint8Array) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let index = 0; index < pdfBytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...Array.from(pdfBytes.subarray(index, index + chunkSize)));
+  }
+  return btoa(binary);
 }
 
 function buildPrintPreviewWindowHtml({
@@ -2585,26 +4441,41 @@ function buildPdfSeal(companyInfo: CompanyInfoState, templateSettings: PdfTempla
   return `<img class="seal" src="${escapeAttr(sealImage)}" style="left:${left}%;top:${top}%;width:${size}px;height:${size}px;opacity:${sealSettings.opacity};transform:translate(-50%,-50%);" />`;
 }
 
-function buildPdfCompanyInlineBlock(companyInfo: CompanyInfoState) {
+function buildPdfCompanyInlineBlock(companyInfo: CompanyInfoState, options: { compactContact?: boolean } = {}) {
+  const contactLines = options.compactContact
+    ? formatFormalQuoteContactLines({ tel: companyInfo.phone, fax: companyInfo.fax })
+    : [`TEL ${companyInfo.phone} / FAX ${companyInfo.fax}`.trim()].filter(Boolean);
+  const contactLinesHtml = contactLines
+    .map((line) => `${options.compactContact ? buildQuoteTrackingSafeText(line, "quote-contact-code") : escapeHtml(line)}<br />`)
+    .join("");
   return `
     <div class="company-inline">
-      <strong>${escapeHtml(companyInfo.legalName)}</strong><br />
-      〒${escapeHtml(companyInfo.postalCode)} ${escapeHtml(companyInfo.headOfficeAddress)}<br />
-      TEL ${escapeHtml(companyInfo.phone)} / FAX ${escapeHtml(companyInfo.fax)}<br />
-      ${escapeHtml(companyInfo.contactTitle)} ${escapeHtml(companyInfo.contactName)}
+      <strong class="issuer-company-name quote-issuer-company-name">${escapeHtml(companyInfo.legalName)}</strong><br />
+      <span class="issuer-address quote-issuer-address" style="color:#475569;font-weight:500;">〒${escapeHtml(companyInfo.postalCode)} ${escapeHtml(companyInfo.headOfficeAddress)}</span><br />
+      ${contactLinesHtml}
+      <span class="issuer-person quote-issuer-person" style="color:#475569;font-weight:500;">${escapeHtml(companyInfo.contactTitle)} ${escapeHtml(companyInfo.contactName)}</span>
     </div>
   `;
 }
 
-function buildPdfRecipientDetailsBlock(recipientInfo?: DocumentRecipientInfo) {
+function buildPdfRecipientDetailsBlock(recipientInfo?: DocumentRecipientInfo, options: { compactContact?: boolean } = {}) {
   const contactName = recipientInfo?.companyName && recipientInfo.contactName ? `${recipientInfo.contactName} 様` : "";
+  const contactLines = options.compactContact
+    ? formatFormalQuoteContactLines({ tel: recipientInfo?.phone })
+    : [recipientInfo?.phone ? `TEL ${recipientInfo.phone}` : ""].filter(Boolean);
   const rows = [
-    contactName,
-    recipientInfo?.address ? `住所 ${recipientInfo.address}` : "",
-    recipientInfo?.phone ? `TEL ${recipientInfo.phone}` : "",
-  ].filter(Boolean);
+    { text: contactName, trackingSafe: false },
+    { text: recipientInfo?.address ? `住所 ${recipientInfo.address}` : "", trackingSafe: false },
+    ...contactLines.map((text) => ({ text, trackingSafe: Boolean(options.compactContact) })),
+  ].filter((row) => row.text);
   if (rows.length === 0) return "";
-  return `<div class="recipient-detail">${rows.map((row) => `<span>${escapeHtml(row)}</span>`).join("")}</div>`;
+  return `<div class="recipient-detail">${rows
+    .map((row) => `<span${row.trackingSafe ? ` class="quote-tracking-safe quote-contact-code"` : ` class="recipient-support-text quote-recipient-detail" style="color:#475569;font-weight:500;"`}>${escapeHtml(row.text)}</span>`)
+    .join("")}</div>`;
+}
+
+function buildQuoteTrackingSafeText(value: string, className = "") {
+  return `<span class="${["quote-tracking-safe", className].filter(Boolean).join(" ")}">${escapeHtml(value)}</span>`;
 }
 
 function getCurrencyAmountSizeClass(value: number) {

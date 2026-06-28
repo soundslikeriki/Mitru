@@ -35,6 +35,7 @@ export function CompanyInfoSection() {
             <Field label="本社住所"><Input value={companyInfo.headOfficeAddress} onChange={(e) => updateCompanyInfo({ headOfficeAddress: e.target.value })} /></Field>
             <Field label="電話番号"><Input value={companyInfo.phone} onChange={(e) => updateCompanyInfo({ phone: formatJapanesePhoneNumber(e.target.value) })} /></Field>
             <Field label="担当者名"><Input value={companyInfo.contactName} onChange={(e) => updateCompanyInfo({ contactName: e.target.value })} /></Field>
+            <Field label="役職"><Input value={companyInfo.contactPosition ?? companyInfo.contactTitle ?? ""} onChange={(e) => updateCompanyInfo({ contactPosition: e.target.value, contactTitle: e.target.value })} /></Field>
           </div>
         </section>
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 backdrop-blur-xl">
@@ -62,7 +63,6 @@ export function CompanyInfoSection() {
               <Field label="会社名（略称）"><Input value={companyInfo.shortName} onChange={(e) => updateCompanyInfo({ shortName: e.target.value })} /></Field>
               <Field label="現場用住所"><Input value={companyInfo.siteAddress} onChange={(e) => updateCompanyInfo({ siteAddress: e.target.value })} /></Field>
               <Field label="FAX"><Input value={companyInfo.fax} onChange={(e) => updateCompanyInfo({ fax: formatJapanesePhoneNumber(e.target.value) })} /></Field>
-              <Field label="役職"><Input value={companyInfo.contactTitle} onChange={(e) => updateCompanyInfo({ contactTitle: e.target.value })} /></Field>
               <Field label="建設業許可番号"><Input value={companyInfo.constructionLicense} onChange={(e) => updateCompanyInfo({ constructionLicense: e.target.value })} /></Field>
               <Field label="インボイス登録番号"><Input value={companyInfo.invoiceRegistrationNumber} onChange={(e) => updateCompanyInfo({ invoiceRegistrationNumber: e.target.value })} /></Field>
               <Field label="メールアドレス"><Input value={companyInfo.email} onChange={(e) => updateCompanyInfo({ email: e.target.value })} /></Field>
@@ -178,6 +178,7 @@ function hasCompanyInfoContent(companyInfo: CompanyInfo) {
     companyInfo.phone,
     companyInfo.fax,
     companyInfo.contactName,
+    companyInfo.contactPosition,
     companyInfo.contactTitle,
     companyInfo.constructionLicense,
     companyInfo.invoiceRegistrationNumber,
